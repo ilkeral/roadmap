@@ -371,6 +371,23 @@ async def create_simulation(
             if len(route_coords) >= 2:
                 route_geometry = await osrm_service.get_route(route_coords, exclude_tolls=params.exclude_tolls)
                 osrm_polyline = route_geometry.get("geometry", [])
+                legs = route_geometry.get("legs", [])
+                
+                # Calculate remaining distance/duration to depot for each stop
+                # legs[0] = depot -> stop1, legs[1] = stop1 -> stop2, ..., legs[N] = stopN -> depot
+                if legs and len(route["stops"]) > 0:
+                    num_stops = len(route["stops"])
+                    for i, stop in enumerate(route["stops"]):
+                        # Calculate remaining distance from this stop to depot
+                        # This is sum of all legs from stop[i] to depot
+                        remaining_distance = 0
+                        remaining_duration = 0
+                        for j in range(i + 1, len(legs)):  # From next leg to last leg (which goes to depot)
+                            remaining_distance += legs[j].get("distance", 0)
+                            remaining_duration += legs[j].get("duration", 0)
+                        
+                        stop["distance_to_depot"] = round(remaining_distance)
+                        stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
                 
                 # Manually add depot at start and end of polyline
                 # OSRM snaps to road network, so we need to ensure visual connection to depot

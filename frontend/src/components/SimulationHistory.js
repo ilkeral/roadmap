@@ -54,7 +54,8 @@ function SimulationHistory({
   onStartEditRoute,
   onCancelEditRoute,
   onSaveRouteChanges,
-  hasModifiedStops
+  hasModifiedStops,
+  showWalkingRadius = true
 }) {
   const [simulations, setSimulations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -143,11 +144,22 @@ function SimulationHistory({
     if (route.stops) {
       route.stops.forEach((stop, stopIndex) => {
         if (stop.employee_names) {
-          stop.employee_names.forEach(name => {
+          const walkingDistances = stop.employee_walking_distances || [];
+          const employeeIds = stop.employee_ids || [];
+          const distanceToDepot = stop.distance_to_depot || null;
+          const durationToDepot = stop.duration_to_depot || null;
+          
+          stop.employee_names.forEach((name, i) => {
+            const empId = employeeIds[i];
+            const walkInfo = walkingDistances.find(w => w.employee_id === empId);
+            
             employees.push({
               name,
               stopName: stop.road_name || stop.name || `Durak ${stopIndex + 1}`,
-              stopIndex: stopIndex + 1
+              stopIndex: stopIndex + 1,
+              walkingDistance: walkInfo ? walkInfo.walking_distance : null,
+              distanceToDepot,
+              durationToDepot
             });
           });
         }
@@ -533,16 +545,52 @@ function SimulationHistory({
           {employeeDialog.employees.length === 0 ? (
             <Alert severity="info">Bu rotada personel bulunamadı.</Alert>
           ) : (
-            <List dense>
-              {employeeDialog.employees.map((emp, idx) => (
-                <ListItem key={idx} sx={{ py: 0.5 }}>
-                  <ListItemText
-                    primary={emp.name}
-                    secondary={`Durak ${emp.stopIndex}: ${emp.stopName}`}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <>
+              {employeeDialog.route && (
+                <Box sx={{ mb: 2, p: 1.5, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Typography variant="body2" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>🚍 Toplam Mesafe:</span>
+                    <strong>{((employeeDialog.route.distance || 0) / 1000).toFixed(1)} km</strong>
+                  </Typography>
+                  <Typography variant="body2" sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                    <span>⏱️ Tahmini Süre:</span>
+                    <strong>{Math.round((employeeDialog.route.duration || employeeDialog.route.distance / 500) / 60)} dk</strong>
+                  </Typography>
+                </Box>
+              )}
+              <List dense>
+                {employeeDialog.employees.map((emp, idx) => (
+                  <ListItem key={idx} sx={{ py: 0.5 }}>
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>{emp.name}</span>
+                          {showWalkingRadius && emp.walkingDistance !== null && (
+                            <Chip 
+                              size="small" 
+                              label={`🚶 ${emp.walkingDistance}m`}
+                              sx={{ ml: 1, height: 20, fontSize: '11px' }}
+                            />
+                          )}
+                        </Box>
+                      }
+                      secondary={
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                          <span>Durak {emp.stopIndex}: {emp.stopName}</span>
+                          {(emp.distanceToDepot !== null || emp.durationToDepot !== null) && (
+                            <span style={{ color: '#1976d2', fontSize: '11px' }}>
+                              📍 Merkeze: {emp.distanceToDepot ? `${(emp.distanceToDepot / 1000).toFixed(1)} km` : '-'} 
+                              {' • '}
+                              ⏱️ {emp.durationToDepot ? `${Math.round(emp.durationToDepot / 60)} dk` : '-'}
+                            </span>
+                          )}
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </>
           )}
           <Box sx={{ mt: 2, textAlign: 'center' }}>
             <Chip 

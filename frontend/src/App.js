@@ -677,6 +677,7 @@ function App() {
           onCancelEditRoute={handleCancelEditRoute}
           onSaveRouteChanges={handleSaveRouteChanges}
           hasModifiedStops={Object.keys(modifiedStops).length > 0}
+          showWalkingRadius={showWalkingRadius}
         />
 
         {/* Simulation Progress Overlay */}
