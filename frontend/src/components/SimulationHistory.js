@@ -32,6 +32,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
+import WorkIcon from '@mui/icons-material/Work';
 import { api } from '../services/api';
 
 // Route colors for visualization
@@ -292,7 +293,7 @@ function SimulationHistory({
                   >
                     <ListItemText
                       primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                           <Typography variant="subtitle2" noWrap sx={{ maxWidth: 180 }}>
                             {sim.name}
                           </Typography>
@@ -304,6 +305,16 @@ function SimulationHistory({
                             variant="outlined"
                             sx={{ height: 22 }}
                           />
+                          {sim.shift_name && (
+                            <Chip
+                              size="small"
+                              icon={<WorkIcon sx={{ fontSize: 14 }} />}
+                              label={sim.shift_name}
+                              color={sim.shift_id ? 'secondary' : 'default'}
+                              variant="outlined"
+                              sx={{ height: 22 }}
+                            />
+                          )}
                         </Box>
                       }
                       secondary={

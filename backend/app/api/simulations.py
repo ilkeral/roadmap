@@ -35,6 +35,7 @@ class SimulationCreate(BaseModel):
     traffic_mode: TrafficMode = Field(default=TrafficMode.NONE, description="Traffic profile: none, morning, or evening")
     buffer_seats: int = Field(default=0, ge=0, le=5, description="Buffer seats to leave empty per vehicle")
     depot_location: Coordinate
+    shift_id: Optional[int] = Field(default=None, description="Shift ID to filter employees. None means all employees")
 
 
 class SimulationSummary(BaseModel):
@@ -55,6 +56,9 @@ class SimulationSummary(BaseModel):
     max_walking_distance: Optional[int] = None
     num_16_seaters: Optional[int] = None
     num_27_seaters: Optional[int] = None
+    # Shift fields
+    shift_id: Optional[int] = None
+    shift_name: Optional[str] = None
 
 
 class RouteDetail(BaseModel):
@@ -91,6 +95,9 @@ class SimulationDetail(BaseModel):
     max_travel_time: Optional[int] = None
     num_16_seaters: Optional[int] = None
     num_27_seaters: Optional[int] = None
+    # Shift fields
+    shift_id: Optional[int] = None
+    shift_name: Optional[str] = None
 
 
 async def ensure_simulation_tables(db: AsyncSession):
@@ -124,7 +131,9 @@ async def ensure_simulation_tables(db: AsyncSession):
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS vehicle_priority VARCHAR(50) DEFAULT 'auto'",
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS max_travel_time INT DEFAULT 65",
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS num_16_seaters INT DEFAULT 5",
-        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS num_27_seaters INT DEFAULT 5"
+        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS num_27_seaters INT DEFAULT 5",
+        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS shift_id INT DEFAULT NULL",
+        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(100) DEFAULT NULL"
     ]:
         try:
             await db.execute(text(col_stmt))
@@ -160,23 +169,49 @@ async def create_simulation(
     try:
         await ensure_simulation_tables(db)
         
-        # Step 1: Fetch employees
-        query = text("""
-            SELECT id, name, 
-                   ST_Y(home_location) as lat, 
-                   ST_X(home_location) as lng
-            FROM employees
-        """)
-        result = await db.execute(query)
+        # Get shift info if shift_id is provided
+        shift_name = None
+        if params.shift_id is not None:
+            shift_query = text("SELECT name FROM shifts WHERE id = :shift_id")
+            shift_result = await db.execute(shift_query, {"shift_id": params.shift_id})
+            shift_row = shift_result.fetchone()
+            if shift_row:
+                shift_name = shift_row.name
+            else:
+                raise HTTPException(status_code=400, detail="Belirtilen vardiya bulunamadı")
+        else:
+            shift_name = "Tüm Çalışanlar"
+        
+        # Step 1: Fetch employees (filtered by shift_id if provided)
+        if params.shift_id is not None:
+            query = text("""
+                SELECT id, name, 
+                       ST_Y(home_location) as lat, 
+                       ST_X(home_location) as lng
+                FROM employees
+                WHERE shift_id = :shift_id
+            """)
+            result = await db.execute(query, {"shift_id": params.shift_id})
+        else:
+            query = text("""
+                SELECT id, name, 
+                       ST_Y(home_location) as lat, 
+                       ST_X(home_location) as lng
+                FROM employees
+            """)
+            result = await db.execute(query)
+        
         employees = [
             {"id": row.id, "name": row.name, "lat": row.lat, "lng": row.lng}
             for row in result.fetchall()
         ]
         
         if not employees:
+            if params.shift_id is not None:
+                raise HTTPException(status_code=400, detail=f"'{shift_name}' vardiyasında çalışan bulunamadı")
             raise HTTPException(status_code=400, detail="Veritabanında çalışan bulunamadı")
         
-        logger.info(f"Simülasyon başlatılıyor: {len(employees)} çalışan")
+        logger.info(f"Simülasyon başlatılıyor: {len(employees)} çalışan (Vardiya: {shift_name})")
         
         # Step 2: Cluster employees into stops
         clustering_result = cluster_employees(
@@ -373,10 +408,12 @@ async def create_simulation(
             INSERT INTO simulations 
             (name, total_vehicles, total_distance, total_duration, total_passengers,
              max_walking_distance, depot_lat, depot_lng, traffic_mode, buffer_seats,
-             vehicle_priority, max_travel_time, num_16_seaters, num_27_seaters)
+             vehicle_priority, max_travel_time, num_16_seaters, num_27_seaters,
+             shift_id, shift_name)
             VALUES (:name, :vehicles, :distance, :duration, :passengers,
                     :walk_dist, :depot_lat, :depot_lng, :traffic_mode, :buffer_seats,
-                    :vehicle_priority, :max_travel_time, :num_16_seaters, :num_27_seaters)
+                    :vehicle_priority, :max_travel_time, :num_16_seaters, :num_27_seaters,
+                    :shift_id, :shift_name)
             RETURNING id, created_at
         """)
         
@@ -394,7 +431,9 @@ async def create_simulation(
             "vehicle_priority": params.vehicle_priority or "auto",
             "max_travel_time": params.max_travel_time,
             "num_16_seaters": num_16,
-            "num_27_seaters": num_27
+            "num_27_seaters": num_27,
+            "shift_id": params.shift_id,
+            "shift_name": shift_name
         })
         
         sim_row = result.fetchone()
@@ -456,7 +495,9 @@ async def create_simulation(
             max_travel_time=params.max_travel_time,
             max_walking_distance=params.max_walking_distance,
             num_16_seaters=num_16,
-            num_27_seaters=num_27
+            num_27_seaters=num_27,
+            shift_id=params.shift_id,
+            shift_name=shift_name
         )
         
     except HTTPException:
@@ -481,7 +522,7 @@ async def list_simulations(
             SELECT s.id, s.name, s.total_vehicles, s.total_distance, s.total_duration,
                    s.total_passengers, s.created_at, s.traffic_mode, s.buffer_seats,
                    s.vehicle_priority, s.max_travel_time, s.max_walking_distance,
-                   s.num_16_seaters, s.num_27_seaters,
+                   s.num_16_seaters, s.num_27_seaters, s.shift_id, s.shift_name,
                    COUNT(sr.id) as route_count
             FROM simulations s
             LEFT JOIN simulation_routes sr ON s.id = sr.simulation_id
@@ -509,7 +550,9 @@ async def list_simulations(
                 max_travel_time=row.max_travel_time,
                 max_walking_distance=row.max_walking_distance,
                 num_16_seaters=row.num_16_seaters,
-                num_27_seaters=row.num_27_seaters
+                num_27_seaters=row.num_27_seaters,
+                shift_id=row.shift_id,
+                shift_name=row.shift_name
             )
             for row in rows
         ]
@@ -531,7 +574,7 @@ async def get_simulation(
             SELECT id, name, total_vehicles, total_distance, total_duration,
                    total_passengers, max_walking_distance, depot_lat, depot_lng, created_at,
                    traffic_mode, buffer_seats, vehicle_priority, max_travel_time,
-                   num_16_seaters, num_27_seaters
+                   num_16_seaters, num_27_seaters, shift_id, shift_name
             FROM simulations WHERE id = :id
         """)
         
@@ -596,7 +639,9 @@ async def get_simulation(
             vehicle_priority=sim.vehicle_priority,
             max_travel_time=sim.max_travel_time,
             num_16_seaters=sim.num_16_seaters,
-            num_27_seaters=sim.num_27_seaters
+            num_27_seaters=sim.num_27_seaters,
+            shift_id=sim.shift_id,
+            shift_name=sim.shift_name
         )
         
     except HTTPException:

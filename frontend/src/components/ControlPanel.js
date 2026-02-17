@@ -32,6 +32,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RouteIcon from '@mui/icons-material/Route';
 import SettingsIcon from '@mui/icons-material/Settings';
+import WorkIcon from '@mui/icons-material/Work';
 import ExcelUpload from './ExcelUpload';
 
 import ListIcon from '@mui/icons-material/List';
@@ -77,6 +78,8 @@ function ControlPanel({
   const [excludeTolls, setExcludeTolls] = useState(false);
   const [trafficMode, setTrafficMode] = useState('none');
   const [bufferSeats, setBufferSeats] = useState(0);
+  const [shifts, setShifts] = useState([]);
+  const [selectedShiftId, setSelectedShiftId] = useState('all'); // 'all' for all employees
   const [centerAddress, setCenterAddress] = useState('');
   const [centerLat, setCenterLat] = useState('');
   const [centerLng, setCenterLng] = useState('');
@@ -115,7 +118,18 @@ function ControlPanel({
   // Load center settings on mount
   useEffect(() => {
     loadCenterSettings();
+    loadShifts();
   }, []);
+
+  // Load shifts
+  const loadShifts = async () => {
+    try {
+      const data = await api.getShifts();
+      setShifts(data);
+    } catch (error) {
+      console.error('Vardiyalar yüklenemedi:', error);
+    }
+  };
 
   // Update local state when depotLocation changes
   useEffect(() => {
@@ -178,9 +192,23 @@ function ControlPanel({
       max_travel_time: maxTravelTime,
       exclude_tolls: excludeTolls,
       traffic_mode: trafficMode,
-      buffer_seats: bufferSeats
+      buffer_seats: bufferSeats,
+      shift_id: selectedShiftId === 'all' ? null : selectedShiftId
     });
   };
+
+  // Get selected employee count for the selected shift
+  const getSelectedEmployeeCount = () => {
+    if (selectedShiftId === 'all') {
+      return employeeCount;
+    }
+    const selectedShift = shifts.find(s => s.id === selectedShiftId);
+    return selectedShift ? selectedShift.employee_count : 0;
+  };
+
+  const selectedEmployeeCount = getSelectedEmployeeCount();
+  const selectedRecommendedFleet = calculateRecommendedFleet(selectedEmployeeCount);
+  const selectedCapacityStatus = selectedEmployeeCount > 0 ? (totalCapacity >= selectedEmployeeCount ? 'sufficient' : 'insufficient') : 'none';
 
   return (
     <Box sx={{ p: 2, height: 'calc(100vh - 64px)', overflow: 'auto' }}>
@@ -304,6 +332,52 @@ function ControlPanel({
           <Typography>Optimizasyon Ayarları</Typography>
         </AccordionSummary>
         <AccordionDetails>
+          {/* Vardiya Seçimi */}
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <WorkIcon fontSize="small" />
+                Vardiya Seçimi
+              </Box>
+            </InputLabel>
+            <Select
+              value={selectedShiftId}
+              label="Vardiya Seçimi      "
+              onChange={(e) => setSelectedShiftId(e.target.value)}
+            >
+              <MenuItem value="all">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <PeopleIcon fontSize="small" color="primary" />
+                  <span>Tüm Çalışanlar ({employeeCount || 0} kişi)</span>
+                </Box>
+              </MenuItem>
+              {shifts.map(shift => (
+                <MenuItem key={shift.id} value={shift.id}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        bgcolor: shift.color || '#1976d2',
+                        flexShrink: 0
+                      }}
+                    />
+                    <span>{shift.name} ({shift.employee_count || 0} kişi)</span>
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {selectedShiftId !== 'all' && selectedEmployeeCount === 0 && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Seçili vardiyada çalışan bulunmuyor!
+            </Alert>
+          )}
+
+          <Divider sx={{ my: 2 }} />
+
           <Typography gutterBottom>
             Maks. Yürüme Mesafesi: {maxWalkingDistance}m
           </Typography>
@@ -326,7 +400,7 @@ function ControlPanel({
           <Typography gutterBottom>Filo Yapılandırması</Typography>
           
           {/* Recommended Fleet Info */}
-          {employeeCount > 0 && (
+          {selectedEmployeeCount > 0 && (
             <Alert 
               severity="info" 
               sx={{ mb: 2 }}
@@ -334,18 +408,21 @@ function ControlPanel({
                 <Button 
                   color="inherit" 
                   size="small" 
-                  onClick={applyRecommendedFleet}
+                  onClick={() => {
+                    setNum27Seaters(selectedRecommendedFleet.num27);
+                    setNum16Seaters(selectedRecommendedFleet.num16);
+                  }}
                 >
                   Uygula
                 </Button>
               }
             >
               <Typography variant="body2">
-                <strong>{employeeCount}</strong> çalışan için önerilen minimum filo:
+                <strong>{selectedEmployeeCount}</strong> çalışan için önerilen minimum filo:
                 <br />
-                {recommendedFleet.num27 > 0 && `${recommendedFleet.num27} adet 27'lik`}
-                {recommendedFleet.num27 > 0 && recommendedFleet.num16 > 0 && ' + '}
-                {recommendedFleet.num16 > 0 && `${recommendedFleet.num16} adet 16'lık`}
+                {selectedRecommendedFleet.num27 > 0 && `${selectedRecommendedFleet.num27} adet 27'lik`}
+                {selectedRecommendedFleet.num27 > 0 && selectedRecommendedFleet.num16 > 0 && ' + '}
+                {selectedRecommendedFleet.num16 > 0 && `${selectedRecommendedFleet.num16} adet 16'lık`}
               </Typography>
             </Alert>
           )}
@@ -370,16 +447,16 @@ function ControlPanel({
           </Box>
 
           <Alert 
-            severity={capacityStatus === 'sufficient' ? 'success' : capacityStatus === 'insufficient' ? 'error' : 'info'}
+            severity={selectedCapacityStatus === 'sufficient' ? 'success' : selectedCapacityStatus === 'insufficient' ? 'error' : 'info'}
             sx={{ mb: 2 }}
           >
             Toplam Kapasite: <strong>{totalCapacity}</strong> yolcu
-            {employeeCount > 0 && (
+            {selectedEmployeeCount > 0 && (
               <>
                 {' | '}
-                {capacityStatus === 'sufficient' 
-                  ? `✓ ${employeeCount} çalışan için yeterli` 
-                  : `✗ ${employeeCount - totalCapacity} kişi taşınamaz`}
+                {selectedCapacityStatus === 'sufficient' 
+                  ? `✓ ${selectedEmployeeCount} çalışan için yeterli` 
+                  : `✗ ${selectedEmployeeCount - totalCapacity} kişi taşınamaz`}
               </>
             )}
           </Alert>
@@ -491,7 +568,7 @@ function ControlPanel({
             color="secondary"
             fullWidth
             onClick={handleOptimizeClick}
-            disabled={loading || !systemStatus?.ready || !employeeCount || capacityStatus === 'insufficient'}
+            disabled={loading || !systemStatus?.ready || !selectedEmployeeCount || selectedCapacityStatus === 'insufficient'}
             startIcon={loading ? <CircularProgress size={20} /> : <AddIcon />}
             sx={{ mt: 2 }}
           >
