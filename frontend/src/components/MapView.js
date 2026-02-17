@@ -407,14 +407,27 @@ function MapView({
             icon={editingEmployee?.id === employee.id ? createIcon('#FF9800', 20) : employeeIcon}
           >
             <Popup>
-              <div style={{ minWidth: '150px' }}>
-                <strong>{employee.name}</strong><br />
-                {employee.address && <span style={{ fontSize: '11px', color: '#666' }}>{employee.address}<br /></span>}
-                <span style={{ fontSize: '11px', color: '#888' }}>
+              <div style={{ minWidth: 200, maxWidth: 220, textAlign: 'center', padding: '4px 0' }}>
+                <div style={{ width: '100%', marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
+                  {employee.photo_url ? (
+                    <img
+                      src={employee.photo_url}
+                      alt={employee.name}
+                      style={{ width: 70, height: 70, borderRadius: '50%', objectFit: 'cover', border: '3px solid #1976d2', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{ width: 70, height: 70, borderRadius: '50%', background: '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '3px solid #1976d2' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="#1976d2"><path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v3h20v-3c0-3.3-6.7-5-10-5z"/></svg>
+                    </div>
+                  )}
+                </div>
+                <div style={{ fontWeight: 'bold', color: '#1976d2', fontSize: 14, marginBottom: 6, textAlign: 'center', width: '100%' }}>{employee.name}</div>
+                {employee.address && <div style={{ fontSize: 11, color: '#666', marginBottom: 6, lineHeight: 1.3, textAlign: 'center', width: '100%' }}>{employee.address}</div>}
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 10, textAlign: 'center', width: '100%' }}>
                   {employee.location.lat.toFixed(5)}, {employee.location.lng.toFixed(5)}
-                </span>
+                </div>
                 {routes.length === 0 && onEmployeeLocationUpdate && (
-                  <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                     <Button
                       size="small"
                       variant="outlined"

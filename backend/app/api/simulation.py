@@ -24,12 +24,17 @@ async def get_simulation_data(
     """
     # Get employees
     emp_query = text("""
-        SELECT id, name, 
-               ST_Y(home_location) as lat, 
-               ST_X(home_location) as lng,
-               assigned_stop_id,
-               address
-        FROM employees
+        SELECT e.id, e.name, 
+               ST_Y(e.home_location) as lat, 
+               ST_X(e.home_location) as lng,
+               e.assigned_stop_id,
+               e.address,
+               e.photo_url,
+               e.shift_id,
+               s.name as shift_name,
+               s.color as shift_color
+        FROM employees e
+        LEFT JOIN shifts s ON e.shift_id = s.id
     """)
     emp_result = await db.execute(emp_query)
     employees = [
@@ -38,7 +43,11 @@ async def get_simulation_data(
             "name": row.name,
             "location": {"lat": row.lat, "lng": row.lng},
             "assigned_stop_id": row.assigned_stop_id,
-            "address": row.address
+            "address": row.address,
+            "photo_url": row.photo_url,
+            "shift_id": row.shift_id,
+            "shift_name": row.shift_name,
+            "shift_color": row.shift_color
         }
         for row in emp_result.fetchall()
     ]

@@ -1,12 +1,28 @@
 -- Enable PostGIS extension
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- Shifts table for grouping employees
+CREATE TABLE IF NOT EXISTS shifts (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    color VARCHAR(20) DEFAULT '#1976d2',
+    start_time TIME,
+    end_time TIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default shift
+INSERT INTO shifts (name, color) VALUES ('Genel', '#1976d2') ON CONFLICT (name) DO NOTHING;
+
 -- Employees table with spatial coordinates
 CREATE TABLE IF NOT EXISTS employees (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     home_location GEOMETRY(POINT, 4326) NOT NULL,
     assigned_stop_id INTEGER,
+    address VARCHAR(500),
+    photo_url VARCHAR(500),
+    shift_id INTEGER REFERENCES shifts(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

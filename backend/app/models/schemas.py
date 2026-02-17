@@ -29,6 +29,37 @@ class Coordinate(BaseModel):
     lng: float = Field(..., ge=-180, le=180, description="Longitude")
 
 
+# ============== Shift Schemas ==============
+class ShiftBase(BaseModel):
+    """Base shift schema"""
+    name: str = Field(..., min_length=1, max_length=100)
+    color: Optional[str] = Field(default='#1976d2', max_length=20)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+class ShiftCreate(ShiftBase):
+    """Schema for creating a shift"""
+    pass
+
+
+class ShiftUpdate(BaseModel):
+    """Schema for updating a shift"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    color: Optional[str] = Field(None, max_length=20)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+class ShiftResponse(ShiftBase):
+    """Schema for shift response"""
+    id: int
+    employee_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class EmployeeBase(BaseModel):
     """Base employee schema"""
     name: str = Field(..., min_length=1, max_length=100)
@@ -38,6 +69,8 @@ class EmployeeBase(BaseModel):
 class EmployeeCreate(EmployeeBase):
     """Schema for creating an employee"""
     address: Optional[str] = None
+    photo_url: Optional[str] = None
+    shift_id: Optional[int] = None
 
 
 class EmployeeBulkCreate(BaseModel):
@@ -51,6 +84,10 @@ class EmployeeResponse(EmployeeBase):
     assigned_stop_id: Optional[int] = None
     distance_to_stop: Optional[float] = None
     address: Optional[str] = None
+    photo_url: Optional[str] = None
+    shift_id: Optional[int] = None
+    shift_name: Optional[str] = None
+    shift_color: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -2,6 +2,7 @@
 Employees API Router - CRUD operations for employee data
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List, Optional
@@ -9,6 +10,10 @@ import random
 import numpy as np
 import pandas as pd
 import io
+import os
+import uuid
+import shutil
+from pathlib import Path
 
 from app.core.database import get_db
 from app.models.schemas import (
@@ -19,26 +24,55 @@ from app.services.geocoding_service import geocoding_service
 
 router = APIRouter()
 
+# Upload directory for photos
+UPLOAD_DIR = Path("/app/uploads/photos")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 
 @router.get("/", response_model=List[EmployeeResponse])
 async def get_employees(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    shift_id: Optional[int] = Query(None, description="Filter by shift ID"),
     db: AsyncSession = Depends(get_db)
 ):
     """Get all employees with pagination."""
-    query = text("""
-        SELECT id, name, 
-               ST_Y(home_location) as lat, 
-               ST_X(home_location) as lng,
-               assigned_stop_id,
-               address
-        FROM employees
-        ORDER BY id
-        OFFSET :skip LIMIT :limit
-    """)
+    if shift_id is not None:
+        query = text("""
+            SELECT e.id, e.name, 
+                   ST_Y(e.home_location) as lat, 
+                   ST_X(e.home_location) as lng,
+                   e.assigned_stop_id,
+                   e.address,
+                   e.photo_url,
+                   e.shift_id,
+                   s.name as shift_name,
+                   s.color as shift_color
+            FROM employees e
+            LEFT JOIN shifts s ON e.shift_id = s.id
+            WHERE e.shift_id = :shift_id
+            ORDER BY e.id
+            OFFSET :skip LIMIT :limit
+        """)
+        result = await db.execute(query, {"skip": skip, "limit": limit, "shift_id": shift_id})
+    else:
+        query = text("""
+            SELECT e.id, e.name, 
+                   ST_Y(e.home_location) as lat, 
+                   ST_X(e.home_location) as lng,
+                   e.assigned_stop_id,
+                   e.address,
+                   e.photo_url,
+                   e.shift_id,
+                   s.name as shift_name,
+                   s.color as shift_color
+            FROM employees e
+            LEFT JOIN shifts s ON e.shift_id = s.id
+            ORDER BY e.id
+            OFFSET :skip LIMIT :limit
+        """)
+        result = await db.execute(query, {"skip": skip, "limit": limit})
     
-    result = await db.execute(query, {"skip": skip, "limit": limit})
     rows = result.fetchall()
     
     return [
@@ -47,7 +81,11 @@ async def get_employees(
             name=row.name,
             home_location=Coordinate(lat=row.lat, lng=row.lng),
             assigned_stop_id=row.assigned_stop_id,
-            address=row.address
+            address=row.address,
+            photo_url=row.photo_url,
+            shift_id=row.shift_id,
+            shift_name=row.shift_name,
+            shift_color=row.shift_color
         )
         for row in rows
     ]
@@ -69,26 +107,114 @@ async def create_employee(
 ):
     """Create a new employee."""
     query = text("""
-        INSERT INTO employees (name, home_location, address)
-        VALUES (:name, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :address)
-        RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, address
+        INSERT INTO employees (name, home_location, address, photo_url, shift_id)
+        VALUES (:name, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), :address, :photo_url, :shift_id)
+        RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, address, photo_url, shift_id
     """)
     
     result = await db.execute(query, {
         "name": employee.name,
         "lat": employee.home_location.lat,
         "lng": employee.home_location.lng,
-        "address": employee.address
+        "address": employee.address,
+        "photo_url": employee.photo_url,
+        "shift_id": employee.shift_id
     })
     await db.commit()
     
     row = result.fetchone()
+    
+    # Get shift info if exists
+    shift_name = None
+    shift_color = None
+    if row.shift_id:
+        shift_query = text("SELECT name, color FROM shifts WHERE id = :id")
+        shift_result = await db.execute(shift_query, {"id": row.shift_id})
+        shift_row = shift_result.fetchone()
+        if shift_row:
+            shift_name = shift_row.name
+            shift_color = shift_row.color
+    
     return EmployeeResponse(
         id=row.id,
         name=row.name,
         home_location=Coordinate(lat=row.lat, lng=row.lng),
-        address=row.address
+        address=row.address,
+        photo_url=row.photo_url,
+        shift_id=row.shift_id,
+        shift_name=shift_name,
+        shift_color=shift_color
     )
+
+
+@router.post("/{employee_id}/photo")
+async def upload_employee_photo(
+    employee_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload a photo for an employee."""
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Sadece JPEG, PNG, GIF veya WebP dosyaları yüklenebilir")
+    
+    # Check if employee exists
+    check_query = text("SELECT id FROM employees WHERE id = :id")
+    result = await db.execute(check_query, {"id": employee_id})
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+    
+    # Generate unique filename
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"{employee_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    file_path = UPLOAD_DIR / filename
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Update database with photo URL
+    photo_url = f"/api/employees/photos/{filename}"
+    update_query = text("""
+        UPDATE employees SET photo_url = :photo_url WHERE id = :id
+        RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, address, photo_url, shift_id
+    """)
+    result = await db.execute(update_query, {"photo_url": photo_url, "id": employee_id})
+    await db.commit()
+    
+    row = result.fetchone()
+    
+    # Get shift info if exists
+    shift_name = None
+    shift_color = None
+    if row.shift_id:
+        shift_query = text("SELECT name, color FROM shifts WHERE id = :id")
+        shift_result = await db.execute(shift_query, {"id": row.shift_id})
+        shift_row = shift_result.fetchone()
+        if shift_row:
+            shift_name = shift_row.name
+            shift_color = shift_row.color
+    
+    return EmployeeResponse(
+        id=row.id,
+        name=row.name,
+        home_location=Coordinate(lat=row.lat, lng=row.lng),
+        address=row.address,
+        photo_url=row.photo_url,
+        shift_id=row.shift_id,
+        shift_name=shift_name,
+        shift_color=shift_color
+    )
+
+
+@router.get("/photos/{filename}")
+async def get_employee_photo(filename: str):
+    """Get an employee photo."""
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    return FileResponse(file_path)
 
 
 @router.post("/bulk", response_model=dict)
@@ -494,7 +620,7 @@ async def update_employee_coordinates(
             SET home_location = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326),
                 address = :address
             WHERE id = :id
-            RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, assigned_stop_id, address
+            RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, assigned_stop_id, address, photo_url, shift_id
         """)
         result = await db.execute(update_query, {"id": employee_id, "lat": lat, "lng": lng, "address": address})
     else:
@@ -502,19 +628,89 @@ async def update_employee_coordinates(
             UPDATE employees 
             SET home_location = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
             WHERE id = :id
-            RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, assigned_stop_id, address
+            RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, assigned_stop_id, address, photo_url, shift_id
         """)
         result = await db.execute(update_query, {"id": employee_id, "lat": lat, "lng": lng})
     
     await db.commit()
     
     row = result.fetchone()
+    
+    # Get shift info if exists
+    shift_name = None
+    shift_color = None
+    if row.shift_id:
+        shift_query = text("SELECT name, color FROM shifts WHERE id = :id")
+        shift_result = await db.execute(shift_query, {"id": row.shift_id})
+        shift_row = shift_result.fetchone()
+        if shift_row:
+            shift_name = shift_row.name
+            shift_color = shift_row.color
+    
     return EmployeeResponse(
         id=row.id,
         name=row.name,
         home_location=Coordinate(lat=row.lat, lng=row.lng),
         assigned_stop_id=row.assigned_stop_id,
-        address=row.address
+        address=row.address,
+        photo_url=row.photo_url,
+        shift_id=row.shift_id,
+        shift_name=shift_name,
+        shift_color=shift_color
+    )
+
+
+@router.put("/{employee_id}/shift")
+async def update_employee_shift(
+    employee_id: int,
+    shift_id: Optional[int] = Query(None, description="Vardiya ID (null = vardiya kaldır)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update employee's shift assignment."""
+    # Check if employee exists
+    check_query = text("SELECT id FROM employees WHERE id = :id")
+    result = await db.execute(check_query, {"id": employee_id})
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+    
+    # Check if shift exists (if shift_id provided)
+    if shift_id is not None:
+        shift_check = text("SELECT id FROM shifts WHERE id = :id")
+        shift_result = await db.execute(shift_check, {"id": shift_id})
+        if not shift_result.fetchone():
+            raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    
+    # Update shift
+    update_query = text("""
+        UPDATE employees SET shift_id = :shift_id WHERE id = :id
+        RETURNING id, name, ST_Y(home_location) as lat, ST_X(home_location) as lng, assigned_stop_id, address, photo_url, shift_id
+    """)
+    result = await db.execute(update_query, {"id": employee_id, "shift_id": shift_id})
+    await db.commit()
+    
+    row = result.fetchone()
+    
+    # Get shift info if exists
+    shift_name = None
+    shift_color = None
+    if row.shift_id:
+        shift_query = text("SELECT name, color FROM shifts WHERE id = :id")
+        shift_result = await db.execute(shift_query, {"id": row.shift_id})
+        shift_row = shift_result.fetchone()
+        if shift_row:
+            shift_name = shift_row.name
+            shift_color = shift_row.color
+    
+    return EmployeeResponse(
+        id=row.id,
+        name=row.name,
+        home_location=Coordinate(lat=row.lat, lng=row.lng),
+        assigned_stop_id=row.assigned_stop_id,
+        address=row.address,
+        photo_url=row.photo_url,
+        shift_id=row.shift_id,
+        shift_name=shift_name,
+        shift_color=shift_color
     )
 
 

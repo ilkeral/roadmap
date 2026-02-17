@@ -95,6 +95,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - employee_photos:/app/uploads/photos
     networks:
       - shuttle-network
     restart: unless-stopped
@@ -118,6 +119,7 @@ services:
 
 volumes:
   postgres_data:
+  employee_photos:
 
 networks:
   shuttle-network:

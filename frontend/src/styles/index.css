@@ -41,6 +41,27 @@ body {
 .leaflet-popup-content {
   margin: 12px;
   line-height: 1.5;
+  min-width: 200px !important;
+  text-align: center !important;
+}
+
+.leaflet-popup-content > div {
+  display: block !important;
+  text-align: center !important;
+  width: 100% !important;
+}
+
+.leaflet-popup-content img {
+  display: block !important;
+  margin: 0 auto 10px auto !important;
+}
+
+.leaflet-popup-content div {
+  text-align: center !important;
+}
+
+.leaflet-popup-content button {
+  margin: 0 auto !important;
 }
 
 /* Animation */

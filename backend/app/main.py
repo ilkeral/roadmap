@@ -8,7 +8,7 @@ import logging
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import employees, stops, optimization, routes, simulation, settings as settings_api, simulations
+from app.api import employees, stops, optimization, routes, simulation, settings as settings_api, simulations, shifts
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +48,7 @@ app.include_router(routes.router, prefix="/api/routes", tags=["Routes"])
 app.include_router(simulation.router, prefix="/api/simulation", tags=["Simulation"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(simulations.router, prefix="/api/simulations", tags=["Simulations"])
+app.include_router(shifts.router, prefix="/api/shifts", tags=["Shifts"])
 
 
 @app.get("/")

@@ -64,6 +64,7 @@ function ControlPanel({
   onResetAnimation,
   onExcelUpload,
   onShowEmployees,
+  onAddNewEmployee,
   onUpdateCenter,
   onShowSimulationHistory,
   onSelectRoute
@@ -195,7 +196,7 @@ function ControlPanel({
       )}
 
       {/* Merkez Ayarları */}
-      <Accordion defaultExpanded>
+      <Accordion>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <BusinessIcon sx={{ mr: 1 }} />
           <Typography>Merkez (İşyeri)</Typography>
@@ -246,7 +247,7 @@ function ControlPanel({
       </Accordion>
 
       {/* Çalışanlar Bölümü */}
-      <Accordion defaultExpanded>
+      <Accordion>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <PeopleIcon sx={{ mr: 1 }} />
           <Typography>Çalışanlar</Typography>
@@ -265,34 +266,39 @@ function ControlPanel({
                 Toplam <strong>{employeeCount || 0}</strong> çalışan kayıtlı
               </Typography>
             </Box>
-            <Button
-              variant="contained"
-              fullWidth
-              startIcon={<ListIcon />}
-              onClick={onShowEmployees}
-              disabled={!employeeCount}
-            >
-              Çalışanları Listele
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="contained"
+                fullWidth
+                startIcon={<ListIcon />}
+                onClick={onShowEmployees}
+                disabled={!employeeCount}
+              >
+                Listele
+              </Button>
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<AddIcon />}
+                onClick={onAddNewEmployee}
+              >
+                Yeni Ekle
+              </Button>
+            </Box>
+            <Divider sx={{ my: 1 }} />
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Excel'den Toplu Yükleme
+            </Typography>
+            <ExcelUpload 
+              onUploadComplete={onExcelUpload}
+              loading={loading}
+              setLoading={setLoading}
+            />
           </Box>
         </AccordionDetails>
       </Accordion>
 
-      <Accordion defaultExpanded>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <PeopleIcon sx={{ mr: 1 }} />
-          <Typography>Çalışan Verisi Yükle</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <ExcelUpload 
-            onUploadComplete={onExcelUpload}
-            loading={loading}
-            setLoading={setLoading}
-          />
-        </AccordionDetails>
-      </Accordion>
-
-      <Accordion defaultExpanded>
+      <Accordion>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <SettingsIcon sx={{ mr: 1 }} />
           <Typography>Optimizasyon Ayarları</Typography>

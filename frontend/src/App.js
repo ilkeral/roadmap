@@ -47,7 +47,7 @@ const theme = createTheme({
 });
 
 const DRAWER_WIDTH = 380;
-const EMPLOYEE_LIST_WIDTH = 320;
+const EMPLOYEE_LIST_WIDTH = 360;
 
 function App() {
   // Auth State
@@ -57,6 +57,7 @@ function App() {
   // State
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [employeeListOpen, setEmployeeListOpen] = useState(false);
+  const [openAddEmployeeDialog, setOpenAddEmployeeDialog] = useState(false);
   const [simulationHistoryOpen, setSimulationHistoryOpen] = useState(false);
   const [simulationHistoryRefreshKey, setSimulationHistoryRefreshKey] = useState(0);
   const [selectedSimulationId, setSelectedSimulationId] = useState(null);
@@ -251,11 +252,21 @@ function App() {
   };
 
   const handleShowEmployees = () => {
+    setOpenAddEmployeeDialog(false);
     setEmployeeListOpen(true);
+    setDrawerOpen(false);
+  };
+
+  const handleAddNewEmployee = () => {
+    setOpenAddEmployeeDialog(true);
+    setEmployeeListOpen(true);
+    setDrawerOpen(false);
   };
 
   const handleCloseEmployeeList = () => {
     setEmployeeListOpen(false);
+    setOpenAddEmployeeDialog(false);
+    setDrawerOpen(true);
   };
 
   const handleShowSimulationHistory = () => {
@@ -482,8 +493,6 @@ function App() {
           anchor="left"
           open={drawerOpen}
           sx={{
-            width: DRAWER_WIDTH,
-            flexShrink: 0,
             '& .MuiDrawer-paper': {
               width: DRAWER_WIDTH,
               boxSizing: 'border-box',
@@ -506,6 +515,7 @@ function App() {
             onResetAnimation={handleResetAnimation}
             onExcelUpload={handleExcelUpload}
             onShowEmployees={handleShowEmployees}
+            onAddNewEmployee={handleAddNewEmployee}
             onUpdateCenter={handleUpdateCenter}
             onShowSimulationHistory={handleShowSimulationHistory}
             onSelectRoute={handleSelectRoute}
@@ -531,10 +541,21 @@ function App() {
             employees={employees}
             onEmployeeClick={handleEmployeeClick}
             onClose={handleCloseEmployeeList}
+            openAddDialog={openAddEmployeeDialog}
+            onAddDialogOpened={() => setOpenAddEmployeeDialog(false)}
             onEmployeeUpdate={(updatedEmployee) => {
               setEmployees(prev => prev.map(emp => 
                 emp.id === updatedEmployee.id 
-                  ? { ...emp, location: updatedEmployee.home_location, home_location: updatedEmployee.home_location, address: updatedEmployee.address }
+                  ? { 
+                      ...emp, 
+                      location: updatedEmployee.home_location, 
+                      home_location: updatedEmployee.home_location, 
+                      address: updatedEmployee.address, 
+                      photo_url: updatedEmployee.photo_url,
+                      shift_id: updatedEmployee.shift_id,
+                      shift_name: updatedEmployee.shift_name,
+                      shift_color: updatedEmployee.shift_color
+                    }
                   : emp
               ));
             }}
@@ -544,7 +565,11 @@ function App() {
             onEmployeeAdd={(newEmployee) => {
               setEmployees(prev => [...prev, {
                 ...newEmployee,
-                location: newEmployee.home_location
+                location: newEmployee.home_location,
+                photo_url: newEmployee.photo_url,
+                shift_id: newEmployee.shift_id,
+                shift_name: newEmployee.shift_name,
+                shift_color: newEmployee.shift_color
               }]);
             }}
             loading={loading}
@@ -556,10 +581,7 @@ function App() {
           component="main"
           sx={{
             flexGrow: 1,
-            transition: 'margin 0.3s',
-            marginLeft: (drawerOpen && employeeListOpen) 
-              ? `${EMPLOYEE_LIST_WIDTH}px` 
-              : (drawerOpen ? 0 : `-${DRAWER_WIDTH}px`),
+            width: '100%',
           }}
         >
           <Toolbar />

@@ -47,11 +47,24 @@ export const api = {
     return response.data;
   },
 
-  async createEmployee(name, lat, lng, address = null) {
+  async createEmployee(name, lat, lng, address = null, photoUrl = null) {
     const response = await client.post('/api/employees/', {
       name,
       home_location: { lat, lng },
-      address
+      address,
+      photo_url: photoUrl
+    });
+    return response.data;
+  },
+
+  async uploadEmployeePhoto(employeeId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await client.post(`/api/employees/${employeeId}/photo`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     return response.data;
   },
@@ -220,6 +233,44 @@ export const api = {
     const response = await client.post('/api/routes/measure', {
       points: points.map(p => ({ lat: p.lat, lng: p.lng }))
     });
+    return response.data;
+  },
+
+  // Shifts (Vardiyalar)
+  async getShifts() {
+    const response = await client.get('/api/shifts/');
+    return response.data;
+  },
+
+  async createShift(name, color = '#1976d2', startTime = null, endTime = null) {
+    const response = await client.post('/api/shifts/', {
+      name,
+      color,
+      start_time: startTime,
+      end_time: endTime
+    });
+    return response.data;
+  },
+
+  async updateShift(shiftId, data) {
+    const response = await client.put(`/api/shifts/${shiftId}`, data);
+    return response.data;
+  },
+
+  async deleteShift(shiftId) {
+    const response = await client.delete(`/api/shifts/${shiftId}`);
+    return response.data;
+  },
+
+  async updateEmployeeShift(employeeId, shiftId) {
+    const response = await client.put(`/api/employees/${employeeId}/shift`, null, {
+      params: { shift_id: shiftId }
+    });
+    return response.data;
+  },
+
+  async assignEmployeesToShift(shiftId, employeeIds) {
+    const response = await client.put(`/api/shifts/${shiftId}/assign-employees`, employeeIds);
     return response.data;
   }
 };
