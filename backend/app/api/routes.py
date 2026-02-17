@@ -10,6 +10,7 @@ import json
 
 from app.core.database import get_db
 from app.services.osrm_service import osrm_service
+from app.services.ors_service import ors_service
 
 router = APIRouter()
 
@@ -174,7 +175,7 @@ class MeasureRequest(BaseModel):
 async def measure_distance(request: MeasureRequest):
     """
     Measure real road distance and duration between points.
-    Uses OSRM to calculate actual driving route.
+    Uses OSRM to calculate actual driving and walking routes.
     """
     if len(request.points) < 2:
         raise HTTPException(status_code=400, detail="En az 2 nokta gerekli")
@@ -182,11 +183,29 @@ async def measure_distance(request: MeasureRequest):
     # Convert to coordinate tuples
     coordinates = [(p.lat, p.lng) for p in request.points]
     
-    # Get route from OSRM
-    route_data = await osrm_service.get_route(coordinates)
+    # Get driving route from OSRM (car profile)
+    driving_data = await osrm_service.get_route(coordinates)
+    
+    # Get walking route from OpenRouteService API
+    walking_data = await ors_service.get_walking_route(coordinates)
+    
+    # If ORS failed (fallback), use driving route geometry with walking time
+    if walking_data.get("fallback"):
+        walking_distance = driving_data.get("distance", 0)
+        walking_polyline = driving_data.get("geometry", [])
+        walking_duration = walking_distance / 1.39  # 5 km/h
+    else:
+        walking_distance = walking_data.get("distance", 0)
+        walking_polyline = walking_data.get("geometry", [])
+        walking_duration = walking_data.get("duration", 0)
     
     return {
-        "distance": route_data.get("distance", 0),
-        "duration": route_data.get("duration", 0),
-        "polyline": route_data.get("geometry", [])
+        # Driving (araç)
+        "distance": driving_data.get("distance", 0),
+        "duration": driving_data.get("duration", 0),
+        "polyline": driving_data.get("geometry", []),
+        # Walking (yaya)
+        "walking_distance": round(walking_distance),
+        "walking_duration": round(walking_duration),
+        "walking_polyline": walking_polyline
     }

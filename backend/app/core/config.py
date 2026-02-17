@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # OSRM
     osrm_url: str = os.getenv("OSRM_URL", "http://localhost:5000")
     
+    # OpenRouteService API (for walking routes)
+    ors_api_key: str = os.getenv("ORS_API_KEY", "")
+    
     # CORS
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:3000")
     

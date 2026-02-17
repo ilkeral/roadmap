@@ -7,6 +7,7 @@ from sqlalchemy import text
 import logging
 
 from app.core.database import get_db
+from app.services.ors_service import clear_ors_api_key_cache
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -30,6 +31,7 @@ class CenterSettingsResponse(CenterSettings):
 class GeneralSettings(BaseModel):
     """General application settings"""
     google_maps_api_key: Optional[str] = Field(default=None, description="Google Maps API Key for traffic data")
+    ors_api_key: Optional[str] = Field(default=None, description="OpenRouteService API Key for walking routes")
     map_type: str = Field(default="street", description="Map tile type: street, satellite, terrain, dark")
 
 
@@ -161,6 +163,7 @@ async def update_center_settings(
 
 DEFAULT_GENERAL_SETTINGS = {
     "google_maps_api_key": "",
+    "ors_api_key": "",
     "map_type": "street"
 }
 
@@ -171,10 +174,21 @@ async def ensure_general_settings_table(db: AsyncSession):
         CREATE TABLE IF NOT EXISTS general_settings (
             id SERIAL PRIMARY KEY,
             google_maps_api_key VARCHAR(255),
+            ors_api_key VARCHAR(255),
             map_type VARCHAR(50) DEFAULT 'street',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    """))
+    # Add ors_api_key column if it doesn't exist (for existing databases)
+    await db.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='general_settings' AND column_name='ors_api_key') THEN
+                ALTER TABLE general_settings ADD COLUMN ors_api_key VARCHAR(255);
+            END IF;
+        END $$;
     """))
     await db.commit()
 
@@ -186,7 +200,7 @@ async def get_general_settings(db: AsyncSession = Depends(get_db)):
         await ensure_general_settings_table(db)
         
         result = await db.execute(text(
-            "SELECT id, google_maps_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
+            "SELECT id, google_maps_api_key, ors_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
         ))
         row = result.fetchone()
         
@@ -194,25 +208,27 @@ async def get_general_settings(db: AsyncSession = Depends(get_db)):
             return GeneralSettingsResponse(
                 id=row[0],
                 google_maps_api_key=row[1] or "",
-                map_type=row[2] or "street"
+                ors_api_key=row[2] or "",
+                map_type=row[3] or "street"
             )
         
         # Create default settings
         await db.execute(text("""
-            INSERT INTO general_settings (google_maps_api_key, map_type)
-            VALUES (:api_key, :map_type)
+            INSERT INTO general_settings (google_maps_api_key, ors_api_key, map_type)
+            VALUES (:google_maps_api_key, :ors_api_key, :map_type)
         """), DEFAULT_GENERAL_SETTINGS)
         await db.commit()
         
         result = await db.execute(text(
-            "SELECT id, google_maps_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
+            "SELECT id, google_maps_api_key, ors_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
         ))
         row = result.fetchone()
         
         return GeneralSettingsResponse(
             id=row[0],
             google_maps_api_key=row[1] or "",
-            map_type=row[2] or "street"
+            ors_api_key=row[2] or "",
+            map_type=row[3] or "street"
         )
         
     except Exception as e:
@@ -237,32 +253,41 @@ async def update_general_settings(
         if row:
             await db.execute(text("""
                 UPDATE general_settings 
-                SET google_maps_api_key = :api_key, map_type = :map_type, updated_at = CURRENT_TIMESTAMP
+                SET google_maps_api_key = :google_maps_api_key, 
+                    ors_api_key = :ors_api_key,
+                    map_type = :map_type, 
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id
             """), {
-                "api_key": settings.google_maps_api_key,
+                "google_maps_api_key": settings.google_maps_api_key,
+                "ors_api_key": settings.ors_api_key,
                 "map_type": settings.map_type,
                 "id": row[0]
             })
             settings_id = row[0]
         else:
             result = await db.execute(text("""
-                INSERT INTO general_settings (google_maps_api_key, map_type)
-                VALUES (:api_key, :map_type)
+                INSERT INTO general_settings (google_maps_api_key, ors_api_key, map_type)
+                VALUES (:google_maps_api_key, :ors_api_key, :map_type)
                 RETURNING id
             """), {
-                "api_key": settings.google_maps_api_key,
+                "google_maps_api_key": settings.google_maps_api_key,
+                "ors_api_key": settings.ors_api_key,
                 "map_type": settings.map_type
             })
             settings_id = result.fetchone()[0]
         
         await db.commit()
         
+        # Clear ORS API key cache so new key is used
+        clear_ors_api_key_cache()
+        
         logger.info(f"General settings updated: map_type={settings.map_type}")
         
         return GeneralSettingsResponse(
             id=settings_id,
             google_maps_api_key=settings.google_maps_api_key or "",
+            ors_api_key=settings.ors_api_key or "",
             map_type=settings.map_type
         )
         

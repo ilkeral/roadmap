@@ -25,6 +25,7 @@ import MapIcon from '@mui/icons-material/Map';
 import KeyIcon from '@mui/icons-material/Key';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
 import SaveIcon from '@mui/icons-material/Save';
 import { api } from '../services/api';
 
@@ -47,8 +48,10 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
   const [success, setSuccess] = useState(false);
   
   const [googleApiKey, setGoogleApiKey] = useState('');
+  const [orsApiKey, setOrsApiKey] = useState('');
   const [mapType, setMapType] = useState('street');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showOrsApiKey, setShowOrsApiKey] = useState(false);
 
   // Load settings on open
   useEffect(() => {
@@ -63,6 +66,7 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
     try {
       const settings = await api.getGeneralSettings();
       setGoogleApiKey(settings.google_maps_api_key || '');
+      setOrsApiKey(settings.ors_api_key || '');
       setMapType(settings.map_type || 'street');
     } catch (err) {
       console.error('Ayarlar yüklenemedi:', err);
@@ -79,6 +83,7 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
     try {
       await api.updateGeneralSettings({
         google_maps_api_key: googleApiKey,
+        ors_api_key: orsApiKey,
         map_type: mapType
       });
       setSuccess(true);
@@ -173,6 +178,44 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
                 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style={{ marginLeft: 4 }}>
                   Google Cloud Console
                 </a>
+              </Typography>
+            </Box>
+            
+            <Divider />
+            
+            {/* OpenRouteService API Section */}
+            <Box>
+              <Typography variant="subtitle1" fontWeight="medium" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <DirectionsWalkIcon color="action" />
+                OpenRouteService API (Yaya Rotası)
+              </Typography>
+              <TextField
+                fullWidth
+                label="ORS API Anahtarı"
+                value={orsApiKey}
+                onChange={(e) => setOrsApiKey(e.target.value)}
+                type={showOrsApiKey ? 'text' : 'password'}
+                placeholder="API anahtarınızı girin..."
+                helperText="Yaya yürüme rotalarını hesaplamak için gerekli"
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowOrsApiKey(!showOrsApiKey)}
+                        edge="end"
+                      >
+                        {showOrsApiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                💡 Ücretsiz API anahtarı almak için: 
+                <a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener noreferrer" style={{ marginLeft: 4 }}>
+                  OpenRouteService
+                </a>
+                {' '}(Günlük 2000 istek ücretsiz)
               </Typography>
             </Box>
             

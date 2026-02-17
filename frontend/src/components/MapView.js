@@ -266,6 +266,7 @@ function MapView({
   const [measurePoints, setMeasurePoints] = useState([]);
   const [measureResult, setMeasureResult] = useState(null);
   const [measurePolyline, setMeasurePolyline] = useState([]);
+  const [walkingPolyline, setWalkingPolyline] = useState([]);
   const [measureLoading, setMeasureLoading] = useState(false);
 
   // Handle map click when editing
@@ -286,9 +287,12 @@ function MapView({
         const result = await api.measureDistance(newPoints);
         setMeasureResult({
           distance: result.distance,
-          duration: result.duration
+          duration: result.duration,
+          walkingDistance: result.walking_distance,
+          walkingDuration: result.walking_duration
         });
         setMeasurePolyline(result.polyline || []);
+        setWalkingPolyline(result.walking_polyline || []);
       } catch (error) {
         console.error('Measure error:', error);
       } finally {
@@ -304,6 +308,7 @@ function MapView({
       setMeasurePoints([]);
       setMeasureResult(null);
       setMeasurePolyline([]);
+      setWalkingPolyline([]);
     }
     setMeasureMode(!measureMode);
   };
@@ -313,6 +318,7 @@ function MapView({
     setMeasurePoints([]);
     setMeasureResult(null);
     setMeasurePolyline([]);
+    setWalkingPolyline([]);
   };
 
   // Handle stop drag
@@ -427,14 +433,27 @@ function MapView({
           </Marker>
         ))}
         
+        {/* Araç rotası - mavi */}
         {measureMode && measurePolyline.length > 1 && (
           <Polyline
             positions={measurePolyline.map(p => [p.lat, p.lng])}
             pathOptions={{
-              color: '#9C27B0',
+              color: '#1976d2',
+              weight: 5,
+              opacity: 0.9
+            }}
+          />
+        )}
+        
+        {/* Yaya rotası - turuncu kesikli */}
+        {measureMode && walkingPolyline.length > 1 && (
+          <Polyline
+            positions={walkingPolyline.map(p => [p.lat, p.lng])}
+            pathOptions={{
+              color: '#ff9800',
               weight: 4,
               opacity: 0.8,
-              dashArray: '10, 10'
+              dashArray: '8, 8'
             }}
           />
         )}
@@ -758,12 +777,38 @@ function MapView({
             )}
             {measureResult && !measureLoading && (
               <Box sx={{ mt: 1, p: 1, bgcolor: 'white', borderRadius: 1 }}>
-                <Typography variant="body2" fontWeight="bold" color="secondary.main">
-                  📏 {(measureResult.distance / 1000).toFixed(2)} km
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  ⏱️ {Math.round(measureResult.duration / 60)} dakika
-                </Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {/* Araç */}
+                  <Box sx={{ flex: 1, textAlign: 'center', p: 1, bgcolor: '#e3f2fd', borderRadius: 1, border: '2px solid #1976d2' }}>
+                    <Typography variant="caption" fontWeight="bold" color="primary.main" display="block">
+                      🚗 Araç
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold" color="primary.main">
+                      {(measureResult.distance / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      ({Math.round(measureResult.distance)} m)
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" sx={{ mt: 0.5 }}>
+                      ⏱️ {(measureResult.duration / 60).toFixed(1)} dk
+                    </Typography>
+                  </Box>
+                  {/* Yaya */}
+                  <Box sx={{ flex: 1, textAlign: 'center', p: 1, bgcolor: '#fff3e0', borderRadius: 1, border: '2px dashed #ff9800' }}>
+                    <Typography variant="caption" fontWeight="bold" color="warning.main" display="block">
+                      🚶 Yaya
+                    </Typography>
+                    <Typography variant="body2" fontWeight="bold" color="warning.main">
+                      {((measureResult.walkingDistance || measureResult.distance) / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      ({Math.round(measureResult.walkingDistance || measureResult.distance)} m)
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" sx={{ mt: 0.5 }}>
+                      ⏱️ {((measureResult.walkingDuration || measureResult.distance / 83.33 * 60) / 60).toFixed(1)} dk
+                    </Typography>
+                  </Box>
+                </Box>
               </Box>
             )}
           </Box>

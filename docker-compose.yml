@@ -37,7 +37,7 @@ services:
     networks:
       - shuttle-network
 
-  # OSRM Routing Engine - for real-world road network calculations
+  # OSRM Routing Engine - for real-world road network calculations (CAR)
   osrm-backend:
     image: osrm/osrm-backend:latest
     container_name: shuttle-osrm
@@ -53,7 +53,7 @@ services:
       - shuttle-network
     restart: unless-stopped
 
-  # OSRM Data Preparation Service (runs once)
+  # OSRM Data Preparation Service for CAR (runs once)
   osrm-prepare:
     image: osrm/osrm-backend:latest
     container_name: shuttle-osrm-prepare
@@ -63,7 +63,7 @@ services:
     command: >
       -c "
         if [ ! -f /data/map.osrm.mldgr ]; then
-          echo 'Preparing OSRM data...';
+          echo 'Preparing OSRM data for car...';
           if [ -f /data/map.osm.pbf ]; then
             osrm-extract -p /opt/car.lua /data/map.osm.pbf &&
             osrm-partition /data/map.osrm &&
@@ -89,6 +89,7 @@ services:
     environment:
       DATABASE_URL: postgresql://shuttle_user:shuttle_pass@postgres:5432/shuttle_routing
       OSRM_URL: http://osrm-backend:5000
+      ORS_API_KEY: ${ORS_API_KEY:-}
       CORS_ORIGINS: http://localhost:3000,http://frontend:3000,http://roadmap.alcom.dev,https://roadmap.alcom.dev
     depends_on:
       postgres:
