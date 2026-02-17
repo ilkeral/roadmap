@@ -24,6 +24,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ListAltIcon from '@mui/icons-material/ListAlt';
+import SettingsIcon from '@mui/icons-material/Settings';
 import Tooltip from '@mui/material/Tooltip';
 
 import MapView from './components/MapView';
@@ -32,6 +33,7 @@ import StatsPanel from './components/StatsPanel';
 import LoginPage from './components/LoginPage';
 import EmployeeList from './components/EmployeeList';
 import SimulationHistory from './components/SimulationHistory';
+import SettingsModal from './components/SettingsModal';
 import { api } from './services/api';
 
 const theme = createTheme({
@@ -78,6 +80,8 @@ function App() {
   const [animationProgress, setAnimationProgress] = useState(0);
   const [focusedEmployee, setFocusedEmployee] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [mapType, setMapType] = useState('street');
 
   // Check existing login on mount
   useEffect(() => {
@@ -116,7 +120,19 @@ function App() {
   useEffect(() => {
     loadSystemStatus();
     loadSimulationData();
+    loadSettings();
   }, []);
+
+  const loadSettings = async () => {
+    try {
+      const settings = await api.getGeneralSettings();
+      if (settings.map_type) {
+        setMapType(settings.map_type);
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+    }
+  };
 
   const loadSystemStatus = async () => {
     try {
@@ -470,6 +486,15 @@ function App() {
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
+            <Tooltip title="Ayarlar">
+              <IconButton
+                color="inherit"
+                onClick={() => setSettingsModalOpen(true)}
+                sx={{ ml: 1 }}
+              >
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
             <Chip
               avatar={<Avatar><PersonIcon /></Avatar>}
               label={user.username}
@@ -599,6 +624,7 @@ function App() {
             onStopDrag={handleStopDrag}
             editingRoute={editingRoute}
             simulationHistoryOpen={simulationHistoryOpen}
+            mapType={mapType}
           />
         </Box>
 
@@ -658,6 +684,17 @@ function App() {
             </Typography>
           </Box>
         </Backdrop>
+
+        {/* Settings Modal */}
+        <SettingsModal
+          open={settingsModalOpen}
+          onClose={() => setSettingsModalOpen(false)}
+          onSettingsChange={(newSettings) => {
+            if (newSettings.mapType) {
+              setMapType(newSettings.mapType);
+            }
+          }}
+        />
 
         {/* Snackbar for notifications */}
         <Snackbar

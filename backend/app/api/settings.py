@@ -27,6 +27,17 @@ class CenterSettingsResponse(CenterSettings):
     id: int
 
 
+class GeneralSettings(BaseModel):
+    """General application settings"""
+    google_maps_api_key: Optional[str] = Field(default=None, description="Google Maps API Key for traffic data")
+    map_type: str = Field(default="street", description="Map tile type: street, satellite, terrain, dark")
+
+
+class GeneralSettingsResponse(GeneralSettings):
+    """Response schema with id"""
+    id: int
+
+
 # Default center location
 DEFAULT_CENTER = {
     "address": "Pendik, İstanbul",
@@ -142,5 +153,120 @@ async def update_center_settings(
         
     except Exception as e:
         logger.error(f"Error updating center settings: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== General Settings ==============
+
+DEFAULT_GENERAL_SETTINGS = {
+    "google_maps_api_key": "",
+    "map_type": "street"
+}
+
+
+async def ensure_general_settings_table(db: AsyncSession):
+    """Create general_settings table if it doesn't exist"""
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS general_settings (
+            id SERIAL PRIMARY KEY,
+            google_maps_api_key VARCHAR(255),
+            map_type VARCHAR(50) DEFAULT 'street',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    await db.commit()
+
+
+@router.get("/general", response_model=GeneralSettingsResponse)
+async def get_general_settings(db: AsyncSession = Depends(get_db)):
+    """Get general application settings"""
+    try:
+        await ensure_general_settings_table(db)
+        
+        result = await db.execute(text(
+            "SELECT id, google_maps_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
+        ))
+        row = result.fetchone()
+        
+        if row:
+            return GeneralSettingsResponse(
+                id=row[0],
+                google_maps_api_key=row[1] or "",
+                map_type=row[2] or "street"
+            )
+        
+        # Create default settings
+        await db.execute(text("""
+            INSERT INTO general_settings (google_maps_api_key, map_type)
+            VALUES (:api_key, :map_type)
+        """), DEFAULT_GENERAL_SETTINGS)
+        await db.commit()
+        
+        result = await db.execute(text(
+            "SELECT id, google_maps_api_key, map_type FROM general_settings ORDER BY id DESC LIMIT 1"
+        ))
+        row = result.fetchone()
+        
+        return GeneralSettingsResponse(
+            id=row[0],
+            google_maps_api_key=row[1] or "",
+            map_type=row[2] or "street"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting general settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/general", response_model=GeneralSettingsResponse)
+async def update_general_settings(
+    settings: GeneralSettings,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update general application settings"""
+    try:
+        await ensure_general_settings_table(db)
+        
+        result = await db.execute(text(
+            "SELECT id FROM general_settings ORDER BY id DESC LIMIT 1"
+        ))
+        row = result.fetchone()
+        
+        if row:
+            await db.execute(text("""
+                UPDATE general_settings 
+                SET google_maps_api_key = :api_key, map_type = :map_type, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+            """), {
+                "api_key": settings.google_maps_api_key,
+                "map_type": settings.map_type,
+                "id": row[0]
+            })
+            settings_id = row[0]
+        else:
+            result = await db.execute(text("""
+                INSERT INTO general_settings (google_maps_api_key, map_type)
+                VALUES (:api_key, :map_type)
+                RETURNING id
+            """), {
+                "api_key": settings.google_maps_api_key,
+                "map_type": settings.map_type
+            })
+            settings_id = result.fetchone()[0]
+        
+        await db.commit()
+        
+        logger.info(f"General settings updated: map_type={settings.map_type}")
+        
+        return GeneralSettingsResponse(
+            id=settings_id,
+            google_maps_api_key=settings.google_maps_api_key or "",
+            map_type=settings.map_type
+        )
+        
+    except Exception as e:
+        logger.error(f"Error updating general settings: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

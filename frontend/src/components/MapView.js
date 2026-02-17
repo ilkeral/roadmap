@@ -253,7 +253,8 @@ function MapView({
   onEmployeeLocationUpdate,
   onStopDrag,
   editingRoute,
-  simulationHistoryOpen
+  simulationHistoryOpen,
+  mapType = 'street'
 }) {
   const [showEmployees, setShowEmployees] = useState(true);
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -341,6 +342,34 @@ function MapView({
     setShowEmployees(employees.length <= 500);
   }, [employees.length]);
 
+  // Map tile configurations
+  const getTileLayer = () => {
+    switch (mapType) {
+      case 'satellite':
+        return {
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          attribution: 'Tiles &copy; Esri'
+        };
+      case 'terrain':
+        return {
+          url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+          attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap'
+        };
+      case 'dark':
+        return {
+          url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+          attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        };
+      default: // street
+        return {
+          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        };
+    }
+  };
+
+  const tileConfig = getTileLayer();
+
   return (
     <Box sx={{ height: 'calc(100vh - 64px)', width: '100%', position: 'relative' }}>
       <MapContainer
@@ -349,8 +378,9 @@ function MapView({
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          key={mapType}
+          attribution={tileConfig.attribution}
+          url={tileConfig.url}
         />
         
         <MapClickHandler 

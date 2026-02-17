@@ -195,6 +195,17 @@ export const api = {
     return response.data;
   },
 
+  // General Settings
+  async getGeneralSettings() {
+    const response = await client.get('/api/settings/general');
+    return response.data;
+  },
+
+  async updateGeneralSettings(settings) {
+    const response = await client.put('/api/settings/general', settings);
+    return response.data;
+  },
+
   // Simulations
   async createSimulation(params) {
     const response = await client.post('/api/simulations/', params);
