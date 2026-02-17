@@ -33,6 +33,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import RouteIcon from '@mui/icons-material/Route';
 import SettingsIcon from '@mui/icons-material/Settings';
 import WorkIcon from '@mui/icons-material/Work';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
+import TrafficIcon from '@mui/icons-material/Traffic';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ExcelUpload from './ExcelUpload';
 
 import ListIcon from '@mui/icons-material/List';
@@ -326,264 +329,278 @@ function ControlPanel({
         </AccordionDetails>
       </Accordion>
 
-      <Accordion>
+      <Accordion defaultExpanded>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <SettingsIcon sx={{ mr: 1 }} />
           <Typography>Optimizasyon Ayarları</Typography>
         </AccordionSummary>
-        <AccordionDetails>
+        <AccordionDetails sx={{ p: 1 }}>
           {/* Vardiya Seçimi */}
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <WorkIcon fontSize="small" />
-                Vardiya Seçimi
-              </Box>
-            </InputLabel>
-            <Select
-              value={selectedShiftId}
-              label="Vardiya Seçimi      "
-              onChange={(e) => setSelectedShiftId(e.target.value)}
-            >
-              <MenuItem value="all">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <PeopleIcon fontSize="small" color="primary" />
-                  <span>Tüm Çalışanlar ({employeeCount || 0} kişi)</span>
-                </Box>
-              </MenuItem>
-              {shifts.map(shift => (
-                <MenuItem key={shift.id} value={shift.id}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box
-                      sx={{
-                        width: 14,
-                        height: 14,
-                        borderRadius: '50%',
-                        bgcolor: shift.color || '#1976d2',
-                        flexShrink: 0
-                      }}
-                    />
-                    <span>{shift.name} ({shift.employee_count || 0} kişi)</span>
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {selectedShiftId !== 'all' && selectedEmployeeCount === 0 && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              Seçili vardiyada çalışan bulunmuyor!
-            </Alert>
-          )}
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography gutterBottom>
-            Maks. Yürüme Mesafesi: {maxWalkingDistance}m
-          </Typography>
-          <Slider
-            value={maxWalkingDistance}
-            onChange={(e, val) => setMaxWalkingDistance(val)}
-            min={50}
-            max={500}
-            step={25}
-            marks={[
-              { value: 100, label: '100m' },
-              { value: 200, label: '200m' },
-              { value: 300, label: '300m' },
-            ]}
-            valueLabelDisplay="auto"
-          />
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography gutterBottom>Filo Yapılandırması</Typography>
-          
-          {/* Recommended Fleet Info */}
-          {selectedEmployeeCount > 0 && (
-            <Alert 
-              severity="info" 
-              sx={{ mb: 2 }}
-              action={
-                <Button 
-                  color="inherit" 
-                  size="small" 
-                  onClick={() => {
-                    setNum27Seaters(selectedRecommendedFleet.num27);
-                    setNum16Seaters(selectedRecommendedFleet.num16);
-                  }}
+          <Accordion defaultExpanded sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <WorkIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
+              <Typography variant="body2" fontWeight="medium">Vardiya Seçimi</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+                <InputLabel>Vardiya</InputLabel>
+                <Select
+                  value={selectedShiftId}
+                  label="Vardiya"
+                  onChange={(e) => setSelectedShiftId(e.target.value)}
                 >
-                  Uygula
-                </Button>
-              }
-            >
-              <Typography variant="body2">
-                <strong>{selectedEmployeeCount}</strong> çalışan için önerilen minimum filo:
-                <br />
-                {selectedRecommendedFleet.num27 > 0 && `${selectedRecommendedFleet.num27} adet 27'lik`}
-                {selectedRecommendedFleet.num27 > 0 && selectedRecommendedFleet.num16 > 0 && ' + '}
-                {selectedRecommendedFleet.num16 > 0 && `${selectedRecommendedFleet.num16} adet 16'lık`}
-              </Typography>
-            </Alert>
-          )}
+                  <MenuItem value="all">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <PeopleIcon fontSize="small" color="primary" />
+                      <span>Tüm Çalışanlar ({employeeCount || 0} kişi)</span>
+                    </Box>
+                  </MenuItem>
+                  {shifts.map(shift => (
+                    <MenuItem key={shift.id} value={shift.id}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: '50%',
+                            bgcolor: shift.color || '#1976d2',
+                            flexShrink: 0
+                          }}
+                        />
+                        <span>{shift.name} ({shift.employee_count || 0} kişi)</span>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {selectedShiftId !== 'all' && selectedEmployeeCount === 0 && (
+                <Alert severity="warning" size="small">
+                  Seçili vardiyada çalışan bulunmuyor!
+                </Alert>
+              )}
+            </AccordionDetails>
+          </Accordion>
 
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-            <TextField
-              label="16 Kişilik"
-              type="number"
-              value={num16Seaters}
-              onChange={(e) => setNum16Seaters(parseInt(e.target.value) || 0)}
-              size="small"
-              inputProps={{ min: 0, max: 20 }}
-            />
-            <TextField
-              label="27 Kişilik"
-              type="number"
-              value={num27Seaters}
-              onChange={(e) => setNum27Seaters(parseInt(e.target.value) || 0)}
-              size="small"
-              inputProps={{ min: 0, max: 20 }}
-            />
-          </Box>
-
-          <Alert 
-            severity={selectedCapacityStatus === 'sufficient' ? 'success' : selectedCapacityStatus === 'insufficient' ? 'error' : 'info'}
-            sx={{ mb: 2 }}
-          >
-            Toplam Kapasite: <strong>{totalCapacity}</strong> yolcu
-            {selectedEmployeeCount > 0 && (
-              <>
-                {' | '}
-                {selectedCapacityStatus === 'sufficient' 
-                  ? `✓ ${selectedEmployeeCount} çalışan için yeterli` 
-                  : `✗ ${selectedEmployeeCount - totalCapacity} kişi taşınamaz`}
-              </>
-            )}
-          </Alert>
-
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>Öncelikli Araç Tipi</InputLabel>
-            <Select
-              value={vehiclePriority}
-              label="Öncelikli Araç Tipi"
-              onChange={(e) => setVehiclePriority(e.target.value)}
-            >
-              <MenuItem value="auto">
-                Otomatik (En Verimli)
-              </MenuItem>
-              <MenuItem value="large">
-                27 Kişilik Öncelikli
-              </MenuItem>
-              <MenuItem value="small">
-                16 Kişilik Öncelikli
-              </MenuItem>
-            </Select>
-          </FormControl>
-
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            {vehiclePriority === 'auto' && '🚌 Sistem en az araçla en verimli rotayı oluşturacak'}
-            {vehiclePriority === 'large' && '🚌 Önce 27 kişilik araçlar kullanılacak'}
-            {vehiclePriority === 'small' && '🚐 Önce 16 kişilik araçlar kullanılacak'}
-          </Typography>
-
-          <Divider sx={{ my: 2 }} />
-
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel>Trafik Modu</InputLabel>
-            <Select
-              value={trafficMode}
-              label="Trafik Modu"
-              onChange={(e) => setTrafficMode(e.target.value)}
-            >
-              <MenuItem value="none">
-                Trafiksiz
-              </MenuItem>
-              <MenuItem value="morning">
-                Sabah 08:00 (×1.4)
-              </MenuItem>
-              <MenuItem value="evening">
-                Akşam 18:00 (×1.6)
-              </MenuItem>
-            </Select>
-          </FormControl>
-
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            {trafficMode === 'none' && '🚗 Normal sürüş süreleri kullanılacak'}
-            {trafficMode === 'morning' && '🚗 Sabah trafiği için süreler %40 artırılacak'}
-            {trafficMode === 'evening' && '🚗 Akşam trafiği için süreler %60 artırılacak'}
-          </Typography>
-
-          <TextField
-            label="Tampon Koltuk"
-            type="number"
-            value={bufferSeats}
-            onChange={(e) => setBufferSeats(Math.max(0, Math.min(5, parseInt(e.target.value) || 0)))}
-            size="small"
-            fullWidth
-            sx={{ mb: 1 }}
-            inputProps={{ min: 0, max: 5 }}
-            helperText="Her araçta boş bırakılacak koltuk sayısı (0-5)"
-          />
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography gutterBottom>
-            Maks. Seyahat Süresi: {maxTravelTime} dk
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-            Bir rotadaki ilk yolcu ile son yolcu arası maksimum süre
-          </Typography>
-          <Slider
-            value={maxTravelTime}
-            onChange={(e, val) => setMaxTravelTime(val)}
-            min={15}
-            max={120}
-            step={5}
-            marks={[
-              { value: 30, label: '30dk' },
-              { value: 65, label: '65dk' },
-              { value: 90, label: '90dk' },
-            ]}
-            valueLabelDisplay="auto"
-          />
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={excludeTolls}
-                onChange={(e) => setExcludeTolls(e.target.checked)}
+          {/* Yürüme Mesafesi */}
+          <Accordion sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <DirectionsWalkIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
+              <Typography variant="body2" fontWeight="medium">Yürüme Mesafesi</Typography>
+              <Chip label={`${maxWalkingDistance}m`} size="small" sx={{ ml: 'auto', mr: 1, height: 20 }} />
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <Slider
+                value={maxWalkingDistance}
+                onChange={(e, val) => setMaxWalkingDistance(val)}
+                min={50}
+                max={500}
+                step={25}
+                marks={[
+                  { value: 100, label: '100m' },
+                  { value: 200, label: '200m' },
+                  { value: 300, label: '300m' },
+                  { value: 400, label: '400m' },
+                ]}
+                valueLabelDisplay="auto"
               />
-            }
-            label="Ücretli Yolları Kullanma"
-            sx={{ mt: 2, display: 'block' }}
-          />
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            {excludeTolls 
-              ? '⚠️ Köprü ve otoyol geçişleri hariç tutulacak' 
-              : '✓ Tüm yollar kullanılabilir'}
-          </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Çalışanların durağa yürüyeceği maksimum mesafe
+              </Typography>
+            </AccordionDetails>
+          </Accordion>
 
-          <Button
-            variant="contained"
-            color="secondary"
-            fullWidth
-            onClick={handleOptimizeClick}
-            disabled={loading || !systemStatus?.ready || !selectedEmployeeCount || selectedCapacityStatus === 'insufficient'}
-            startIcon={loading ? <CircularProgress size={20} /> : <AddIcon />}
-            sx={{ mt: 2 }}
-          >
-            Yeni Simülasyon
-          </Button>
+          {/* Filo Yapılandırması */}
+          <Accordion defaultExpanded sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <DirectionsBusIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
+              <Typography variant="body2" fontWeight="medium">Filo Yapılandırması</Typography>
+              <Chip 
+                label={`${num16Seaters + num27Seaters} araç`} 
+                size="small" 
+                color={selectedCapacityStatus === 'sufficient' ? 'success' : selectedCapacityStatus === 'insufficient' ? 'error' : 'default'}
+                sx={{ ml: 'auto', mr: 1, height: 20 }} 
+              />
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              {selectedEmployeeCount > 0 && (
+                <Alert 
+                  severity="info" 
+                  sx={{ mb: 2, py: 0 }}
+                  action={
+                    <Button 
+                      color="inherit" 
+                      size="small" 
+                      onClick={() => {
+                        setNum27Seaters(selectedRecommendedFleet.num27);
+                        setNum16Seaters(selectedRecommendedFleet.num16);
+                      }}
+                    >
+                      Uygula
+                    </Button>
+                  }
+                >
+                  <Typography variant="caption">
+                    <strong>{selectedEmployeeCount}</strong> kişi için önerilen:
+                    {selectedRecommendedFleet.num27 > 0 && ` ${selectedRecommendedFleet.num27}×27'lik`}
+                    {selectedRecommendedFleet.num27 > 0 && selectedRecommendedFleet.num16 > 0 && ' +'}
+                    {selectedRecommendedFleet.num16 > 0 && ` ${selectedRecommendedFleet.num16}×16'lık`}
+                  </Typography>
+                </Alert>
+              )}
 
-          <Button
-            variant="outlined"
-            fullWidth
-            onClick={onShowSimulationHistory}
-            startIcon={<ListIcon />}
-            sx={{ mt: 1 }}
-          >
-            Simülasyon Listesi
-          </Button>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <TextField
+                  label="16 Kişilik"
+                  type="number"
+                  value={num16Seaters}
+                  onChange={(e) => setNum16Seaters(parseInt(e.target.value) || 0)}
+                  size="small"
+                  inputProps={{ min: 0, max: 20 }}
+                />
+                <TextField
+                  label="27 Kişilik"
+                  type="number"
+                  value={num27Seaters}
+                  onChange={(e) => setNum27Seaters(parseInt(e.target.value) || 0)}
+                  size="small"
+                  inputProps={{ min: 0, max: 20 }}
+                />
+              </Box>
+
+              <Alert 
+                severity={selectedCapacityStatus === 'sufficient' ? 'success' : selectedCapacityStatus === 'insufficient' ? 'error' : 'info'}
+                sx={{ py: 0 }}
+              >
+                <Typography variant="caption">
+                  Kapasite: <strong>{totalCapacity}</strong>
+                  {selectedEmployeeCount > 0 && (
+                    selectedCapacityStatus === 'sufficient' 
+                      ? ` ✓ ${selectedEmployeeCount} kişi için yeterli` 
+                      : ` ✗ ${selectedEmployeeCount - totalCapacity} kişi taşınamaz`
+                  )}
+                </Typography>
+              </Alert>
+
+              <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                <InputLabel>Öncelikli Araç Tipi</InputLabel>
+                <Select
+                  value={vehiclePriority}
+                  label="Öncelikli Araç Tipi"
+                  onChange={(e) => setVehiclePriority(e.target.value)}
+                >
+                  <MenuItem value="auto">🚌 Otomatik (En Verimli)</MenuItem>
+                  <MenuItem value="large">🚌 27 Kişilik Öncelikli</MenuItem>
+                  <MenuItem value="small">🚐 16 Kişilik Öncelikli</MenuItem>
+                </Select>
+              </FormControl>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Trafik ve Rota */}
+          <Accordion sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <TrafficIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
+              <Typography variant="body2" fontWeight="medium">Trafik ve Rota</Typography>
+              <Chip 
+                label={trafficMode === 'none' ? 'Trafiksiz' : trafficMode === 'morning' ? '×1.4' : '×1.6'} 
+                size="small" 
+                sx={{ ml: 'auto', mr: 1, height: 20 }} 
+              />
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Trafik Modu</InputLabel>
+                <Select
+                  value={trafficMode}
+                  label="Trafik Modu"
+                  onChange={(e) => setTrafficMode(e.target.value)}
+                >
+                  <MenuItem value="none">🚗 Trafiksiz</MenuItem>
+                  <MenuItem value="morning">🌅 Sabah 08:00 (×1.4)</MenuItem>
+                  <MenuItem value="evening">🌆 Akşam 18:00 (×1.6)</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={excludeTolls}
+                    onChange={(e) => setExcludeTolls(e.target.checked)}
+                    size="small"
+                  />
+                }
+                label={<Typography variant="body2">Ücretli Yolları Kullanma</Typography>}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4 }}>
+                {excludeTolls 
+                  ? '⚠️ Köprü ve otoyol geçişleri hariç' 
+                  : '✓ Tüm yollar kullanılabilir'}
+              </Typography>
+
+              <TextField
+                label="Tampon Koltuk"
+                type="number"
+                value={bufferSeats}
+                onChange={(e) => setBufferSeats(Math.max(0, Math.min(5, parseInt(e.target.value) || 0)))}
+                size="small"
+                fullWidth
+                sx={{ mt: 2 }}
+                inputProps={{ min: 0, max: 5 }}
+                helperText="Her araçta boş bırakılacak koltuk (0-5)"
+              />
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Seyahat Süresi */}
+          <Accordion sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <AccessTimeIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
+              <Typography variant="body2" fontWeight="medium">Seyahat Süresi</Typography>
+              <Chip label={`${maxTravelTime} dk`} size="small" sx={{ ml: 'auto', mr: 1, height: 20 }} />
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <Slider
+                value={maxTravelTime}
+                onChange={(e, val) => setMaxTravelTime(val)}
+                min={15}
+                max={120}
+                step={5}
+                marks={[
+                  { value: 30, label: '30dk' },
+                  { value: 65, label: '65dk' },
+                  { value: 90, label: '90dk' },
+                ]}
+                valueLabelDisplay="auto"
+              />
+              <Typography variant="caption" color="text.secondary">
+                Bir rotadaki ilk yolcu ile son yolcu arası maksimum süre
+              </Typography>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Butonlar */}
+          <Box sx={{ mt: 2, px: 1 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              fullWidth
+              onClick={handleOptimizeClick}
+              disabled={loading || !systemStatus?.ready || !selectedEmployeeCount || selectedCapacityStatus === 'insufficient'}
+              startIcon={loading ? <CircularProgress size={20} /> : <AddIcon />}
+            >
+              Yeni Simülasyon
+            </Button>
+
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={onShowSimulationHistory}
+              startIcon={<ListIcon />}
+              sx={{ mt: 1 }}
+            >
+              Simülasyon Listesi
+            </Button>
+          </Box>
         </AccordionDetails>
       </Accordion>
 
