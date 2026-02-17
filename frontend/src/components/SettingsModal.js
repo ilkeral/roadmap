@@ -30,10 +30,14 @@ import { api } from '../services/api';
 
 // Map type options
 const MAP_TYPES = [
-  { value: 'street', label: 'Sokak Haritası', description: 'OpenStreetMap standart görünümü' },
-  { value: 'satellite', label: 'Uydu Görünümü', description: 'Esri uydu görüntüleri' },
-  { value: 'terrain', label: 'Arazi Haritası', description: 'Topoğrafik görünüm' },
-  { value: 'dark', label: 'Karanlık Mod', description: 'Gece görünümü' },
+  { value: 'street', label: 'Sokak Haritası', description: 'OpenStreetMap standart görünümü', icon: '🗺️' },
+  { value: 'satellite', label: 'Uydu Görünümü', description: 'Esri uydu görüntüleri', icon: '🛰️' },
+  { value: 'terrain', label: 'Arazi Haritası', description: 'Topoğrafik görünüm', icon: '⛰️' },
+  { value: 'dark', label: 'Karanlık Mod', description: 'Gece görünümü', icon: '🌙' },
+  { value: 'voyager', label: 'CartoDB Voyager', description: 'Modern temiz görünüm', icon: '✨' },
+  { value: 'humanitarian', label: 'Humanitarian', description: 'İnsani yardım haritası (HOT)', icon: '❤️' },
+  { value: 'toner', label: 'Toner', description: 'Siyah-beyaz minimalist', icon: '⬛' },
+  { value: 'watercolor', label: 'Watercolor', description: 'Suluboya sanat görünümü', icon: '🎨' },
 ];
 
 function SettingsModal({ open, onClose, onSettingsChange }) {
@@ -207,8 +211,8 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
                     <Box
                       onClick={() => setMapType(type.value)}
                       sx={{
-                        width: 60,
-                        height: 45,
+                        width: 50,
+                        height: 40,
                         borderRadius: 1,
                         border: mapType === type.value ? '2px solid' : '1px solid',
                         borderColor: mapType === type.value ? 'primary.main' : 'divider',
@@ -217,10 +221,14 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
                         alignItems: 'center',
                         justifyContent: 'center',
                         bgcolor: type.value === 'dark' ? '#1a1a2e' : 
+                                type.value === 'toner' ? '#f0f0f0' :
                                 type.value === 'satellite' ? '#2d4a3e' :
-                                type.value === 'terrain' ? '#e8dcc4' : '#f5f5f5',
+                                type.value === 'terrain' ? '#e8dcc4' :
+                                type.value === 'watercolor' ? '#f5e6d3' :
+                                type.value === 'humanitarian' ? '#fff5f5' :
+                                type.value === 'voyager' ? '#fafafa' : '#f5f5f5',
                         color: type.value === 'dark' ? 'white' : 'inherit',
-                        fontSize: 10,
+                        fontSize: 16,
                         fontWeight: mapType === type.value ? 'bold' : 'normal',
                         transition: 'all 0.2s',
                         '&:hover': {
@@ -229,10 +237,7 @@ function SettingsModal({ open, onClose, onSettingsChange }) {
                         }
                       }}
                     >
-                      {type.value === 'street' && '🗺️'}
-                      {type.value === 'satellite' && '🛰️'}
-                      {type.value === 'terrain' && '⛰️'}
-                      {type.value === 'dark' && '🌙'}
+                      {type.icon}
                     </Box>
                   </Tooltip>
                 ))}

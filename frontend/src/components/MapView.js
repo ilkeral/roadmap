@@ -360,6 +360,26 @@ function MapView({
           url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
           attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
         };
+      case 'voyager':
+        return {
+          url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+          attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        };
+      case 'humanitarian':
+        return {
+          url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+          attribution: '&copy; OpenStreetMap contributors, Tiles style by Humanitarian OpenStreetMap Team'
+        };
+      case 'toner':
+        return {
+          url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/toner/{z}/{x}/{y}{r}.png',
+          attribution: 'Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap'
+        };
+      case 'watercolor':
+        return {
+          url: 'https://stamen-tiles-{s}.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg',
+          attribution: 'Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap'
+        };
       default: // street
         return {
           url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
