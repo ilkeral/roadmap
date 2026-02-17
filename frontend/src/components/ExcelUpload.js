@@ -215,7 +215,7 @@ function ExcelUpload({ onUploadComplete, loading, setLoading }) {
               {/* Success message */}
               {result.imported > 0 && (
                 <Alert severity="success" sx={{ mt: 2 }}>
-                  {result.imported} çalışan başarıyla eklendi!
+                  {result.imported} personel başarıyla eklendi!
                 </Alert>
               )}
             </>

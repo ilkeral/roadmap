@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Box, Button, Alert, IconButton, Tooltip, Paper, Typography } from '@mui/material';
 import EditLocationIcon from '@mui/icons-material/EditLocation';
@@ -254,7 +254,8 @@ function MapView({
   onStopDrag,
   editingRoute,
   simulationHistoryOpen,
-  mapType = 'street'
+  mapType = 'street',
+  showWalkingRadius = true
 }) {
   const [showEmployees, setShowEmployees] = useState(true);
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -543,6 +544,37 @@ function MapView({
           );
         })}
 
+        {/* Walking Radius Circles */}
+        {showWalkingRadius && routes.map((route, routeIndex) => {
+          const stops = route.stops || [];
+          const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+          const isSelected = selectedRouteIndex === null || selectedRouteIndex === undefined || selectedRouteIndex === routeIndex;
+          
+          if (!isSelected) return null;
+          
+          return stops.map((stop, stopIndex) => {
+            const location = stop.location;
+            if (!location) return null;
+            
+            const maxWalk = stop.max_walking_distance || 200;
+            
+            return (
+              <Circle
+                key={`walking-radius-${routeIndex}-${stopIndex}`}
+                center={[location.lat, location.lng]}
+                radius={maxWalk}
+                pathOptions={{
+                  color: color,
+                  fillColor: color,
+                  fillOpacity: 0.1,
+                  weight: 1,
+                  dashArray: '5, 5'
+                }}
+              />
+            );
+          });
+        })}
+
         {/* Stop Markers - Red dots where vehicle picks up passengers */}
         {routes.map((route, routeIndex) => {
           const stops = route.stops || [];
@@ -574,23 +606,24 @@ function MapView({
               >
                 <Popup>
                   <div style={{ minWidth: '180px' }}>
-                    <strong style={{ color: color }}>Durak {stopIndex + 1}</strong>
-                    {roadName && <span style={{ color: '#666', marginLeft: '8px' }}>{roadName}</span>}
-                    {isEditing && <span style={{ color: '#ff9800', marginLeft: '8px', fontSize: '11px' }}>(Sürüklenebilir)</span>}
-                    <br />
-                    <span style={{ color: '#888', fontSize: '11px' }}>
+                    <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                      <strong style={{ color: color, fontSize: '14px' }}>Durak {stopIndex + 1}</strong>
+                      {roadName && <span style={{ color: '#666', display: 'block', fontSize: '12px' }}>{roadName}</span>}
+                    </div>
+                    <div style={{ textAlign: 'center', color: '#888', fontSize: '11px', marginBottom: '8px' }}>
                       Rota {route.vehicle_id + 1} • {route.vehicle_type}
-                    </span>
+                    </div>
+                    {isEditing && <div style={{ color: '#ff9800', fontSize: '11px', textAlign: 'center' }}>(Sürüklenebilir)</div>}
                     <hr style={{ margin: '8px 0', borderColor: '#eee' }} />
-                    <strong>{employeeCount} Yolcu:</strong>
-                    <ul style={{ margin: '4px 0', paddingLeft: '16px', maxHeight: '150px', overflowY: 'auto' }}>
+                    <strong>{employeeCount} Personel:</strong>
+                    <ul style={{ margin: '4px 0', paddingLeft: '16px', maxHeight: '150px', overflowY: 'auto', listStyleType: 'none' }}>
                       {employeeNames.length > 0 ? (
                         employeeNames.map((name, i) => {
                           const walkInfo = walkingDistances.find(w => w.employee_id === stop.employee_ids?.[i]);
                           return (
                             <li key={i} style={{ fontSize: '12px' }}>
                               {name}
-                              {walkInfo && (
+                              {showWalkingRadius && walkInfo && (
                                 <span style={{ color: '#888', marginLeft: '4px' }}>
                                   ({walkInfo.walking_distance}m)
                                 </span>
@@ -603,8 +636,8 @@ function MapView({
                           const walkInfo = walkingDistances.find(w => w.employee_id === id);
                           return (
                             <li key={i} style={{ fontSize: '12px' }}>
-                              Çalışan #{id}
-                              {walkInfo && (
+                              Personel #{id}
+                              {showWalkingRadius && walkInfo && (
                                 <span style={{ color: '#888', marginLeft: '4px' }}>
                                   ({walkInfo.walking_distance}m)
                                 </span>
@@ -616,7 +649,7 @@ function MapView({
                         <li style={{ fontSize: '12px', color: '#888' }}>{employeeCount} kişi</li>
                       )}
                     </ul>
-                    {maxWalk > 0 && (
+                    {showWalkingRadius && maxWalk > 0 && (
                       <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
                         Max yürüme: {maxWalk}m
                       </div>
@@ -760,7 +793,7 @@ function MapView({
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: '#2196F3', mr: 1 }} />
-          <span>Çalışanlar</span>
+          <span>Personeller</span>
         </Box>
       </Box>
     </Box>

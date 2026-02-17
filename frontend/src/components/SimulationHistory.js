@@ -451,7 +451,7 @@ function SimulationHistory({
                               }
                             />
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                              <Tooltip title="Çalışan Listesi">
+                              <Tooltip title="Personel Listesi">
                                 <IconButton
                                   size="small"
                                   onClick={(e) => handleShowEmployees(e, route, routeIndex)}
@@ -521,7 +521,7 @@ function SimulationHistory({
                 : 'primary.main' 
             }} 
           />
-          {employeeDialog.route && `Araç ${employeeDialog.route.vehicle_id + 1} - Çalışan Listesi`}
+          {employeeDialog.route && `Araç ${employeeDialog.route.vehicle_id + 1} - Personel Listesi`}
           <IconButton
             onClick={handleCloseEmployeeDialog}
             sx={{ position: 'absolute', right: 8, top: 8 }}
@@ -531,7 +531,7 @@ function SimulationHistory({
         </DialogTitle>
         <DialogContent dividers>
           {employeeDialog.employees.length === 0 ? (
-            <Alert severity="info">Bu rotada çalışan bulunamadı.</Alert>
+            <Alert severity="info">Bu rotada personel bulunamadı.</Alert>
           ) : (
             <List dense>
               {employeeDialog.employees.map((emp, idx) => (
@@ -546,7 +546,7 @@ function SimulationHistory({
           )}
           <Box sx={{ mt: 2, textAlign: 'center' }}>
             <Chip 
-              label={`Toplam: ${employeeDialog.employees.length} çalışan`} 
+              label={`Toplam: ${employeeDialog.employees.length} personel`} 
               color="primary" 
               variant="outlined"
             />

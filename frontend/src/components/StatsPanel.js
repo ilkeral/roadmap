@@ -9,7 +9,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 function StatsPanel({ employees, stops, routes, systemStatus }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-      <Tooltip title="Çalışanlar">
+      <Tooltip title="Personeller">
         <Chip
           icon={<PeopleIcon />}
           label={employees}

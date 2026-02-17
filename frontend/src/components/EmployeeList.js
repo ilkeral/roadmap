@@ -321,7 +321,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
   const handleSaveEmployee = async () => {
     // Validation for add mode
     if (dialogMode === 'add' && !editName.trim()) {
-      setError('Çalışan adı gereklidir');
+      setError('Personel adı gereklidir');
       return;
     }
 
@@ -362,7 +362,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
           employee = await api.updateEmployeeShift(selectedEmployee.id, selectedShiftId);
         }
         
-        setSuccess('Çalışan güncellendi');
+        setSuccess('Personel güncellendi');
         
         if (onEmployeeUpdate) {
           onEmployeeUpdate(employee);
@@ -381,7 +381,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
           employee = await api.updateEmployeeShift(employee.id, selectedShiftId);
         }
         
-        setSuccess('Çalışan eklendi');
+        setSuccess('Personel eklendi');
         
         if (onEmployeeAdd) {
           onEmployeeAdd(employee);
@@ -392,7 +392,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
         handleCloseDialog();
       }, 1000);
     } catch (err) {
-      setError(err.response?.data?.detail || (dialogMode === 'edit' ? 'Çalışan güncellenemedi' : 'Çalışan eklenemedi'));
+      setError(err.response?.data?.detail || (dialogMode === 'edit' ? 'Personel güncellenemedi' : 'Personel eklenemedi'));
     } finally {
       setSaveLoading(false);
     }
@@ -531,7 +531,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <PersonIcon />
           <Typography variant="subtitle1" fontWeight="bold">
-            Çalışanlar
+            Personeller
           </Typography>
           <Chip 
             label={employees.length} 
@@ -549,7 +549,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
               <WorkIcon />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Yeni Çalışan Ekle">
+          <Tooltip title="Yeni Personel Ekle">
             <IconButton size="small" sx={{ color: 'white' }} onClick={handleOpenAddDialog}>
               <AddIcon />
             </IconButton>
@@ -565,7 +565,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
         <TextField
           fullWidth
           size="small"
-          placeholder="Çalışan ara..."
+          placeholder="Personel ara..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
@@ -607,8 +607,8 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
             <PersonIcon sx={{ fontSize: 48, color: 'grey.300', mb: 1 }} />
             <Typography variant="body2" color="text.secondary">
               {employees.length === 0 
-                ? 'Henüz çalışan yok. Excel dosyası yükleyin.'
-                : 'Arama kriterine uygun çalışan bulunamadı.'
+                ? 'Henüz personel yok. Excel dosyası yükleyin.'
+                : 'Arama kriterine uygun personel bulunamadı.'
               }
             </Typography>
           </Box>
@@ -675,7 +675,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
                       {shiftEmployees.length === 0 && (
                         <ListItem sx={{ pl: 4 }}>
                           <Typography variant="caption" color="text.secondary">
-                            Bu vardiyada çalışan yok
+                            Bu vardiyada personel yok
                           </Typography>
                         </ListItem>
                       )}
@@ -734,7 +734,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
                   ) : (
                     <ListItem sx={{ pl: 4 }}>
                       <Typography variant="caption" color="text.secondary">
-                        Tüm çalışanlar vardiyalara atanmış
+                        Tüm personeller vardiyalara atanmış
                       </Typography>
                     </ListItem>
                   )}
@@ -826,7 +826,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
         <DialogTitle sx={{ backgroundColor: dialogMode === 'add' ? 'success.main' : 'primary.main', color: 'white' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {dialogMode === 'add' ? <PersonAddIcon /> : <EditLocationIcon />}
-            {dialogMode === 'add' ? 'Yeni Çalışan' : 'Çalışanı Güncelle'}
+            {dialogMode === 'add' ? 'Yeni Personel' : 'Personeli Güncelle'}
           </Box>
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
@@ -842,7 +842,7 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
             {dialogMode === 'add' ? (
               <TextField
                 fullWidth
-                label="Çalışan Adı *"
+                label="Personel Adı *"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 sx={{ mb: 3 }}
@@ -1018,12 +1018,12 @@ function EmployeeList({ employees, onEmployeeClick, onClose, openAddDialog, onAd
         <DialogTitle sx={{ backgroundColor: 'error.main', color: 'white' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <DeleteIcon />
-            Çalışanı Sil
+                        Personeli Sil
           </Box>
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <Typography>
-            <strong>{employeeToDelete?.name}</strong> adlı çalışanı silmek istediğinize emin misiniz?
+            <strong>{employeeToDelete?.name}</strong> adlı personeli silmek istediğinize emin misiniz?
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             Bu işlem geri alınamaz.

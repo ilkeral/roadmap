@@ -277,11 +277,11 @@ function ControlPanel({
         </AccordionDetails>
       </Accordion>
 
-      {/* Çalışanlar Bölümü */}
+      {/* Personeller Bölümü */}
       <Accordion>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <PeopleIcon sx={{ mr: 1 }} />
-          <Typography>Çalışanlar</Typography>
+          <Typography>Personeller</Typography>
           <Chip 
             label={employeeCount || 0} 
             size="small" 
@@ -294,7 +294,7 @@ function ControlPanel({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <PeopleIcon color="action" />
               <Typography variant="body2">
-                Toplam <strong>{employeeCount || 0}</strong> çalışan kayıtlı
+                Toplam <strong>{employeeCount || 0}</strong> personel kayıtlı
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -352,7 +352,7 @@ function ControlPanel({
                   <MenuItem value="all">
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <PeopleIcon fontSize="small" color="primary" />
-                      <span>Tüm Çalışanlar ({employeeCount || 0} kişi)</span>
+                      <span>Tüm Personeller ({employeeCount || 0} kişi)</span>
                     </Box>
                   </MenuItem>
                   {shifts.map(shift => (
@@ -375,7 +375,7 @@ function ControlPanel({
               </FormControl>
               {selectedShiftId !== 'all' && selectedEmployeeCount === 0 && (
                 <Alert severity="warning" size="small">
-                  Seçili vardiyada çalışan bulunmuyor!
+                  Seçili vardiyada personel bulunmuyor!
                 </Alert>
               )}
             </AccordionDetails>
@@ -404,7 +404,7 @@ function ControlPanel({
                 valueLabelDisplay="auto"
               />
               <Typography variant="caption" color="text.secondary">
-                Çalışanların durağa yürüyeceği maksimum mesafe
+                Personellerin durağa yürüyeceği maksimum mesafe
               </Typography>
             </AccordionDetails>
           </Accordion>

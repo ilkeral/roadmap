@@ -16,7 +16,8 @@ import {
   Avatar,
   Backdrop,
   CircularProgress,
-  Fab
+  Fab,
+  Switch
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
@@ -25,6 +26,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ListAltIcon from '@mui/icons-material/ListAlt';
 import SettingsIcon from '@mui/icons-material/Settings';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
 import Tooltip from '@mui/material/Tooltip';
 
 import MapView from './components/MapView';
@@ -82,6 +84,7 @@ function App() {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [mapType, setMapType] = useState('street');
+  const [showWalkingRadius, setShowWalkingRadius] = useState(true);
 
   // Check existing login on mount
   useEffect(() => {
@@ -168,12 +171,12 @@ function App() {
     setLoading(true);
     try {
       await api.generateEmployees(params);
-      showSnackbar(`${params.num_employees} çalışan oluşturuldu`, 'success');
+      showSnackbar(`${params.num_employees} personel oluşturuldu`, 'success');
       await loadSimulationData();
       await loadSystemStatus();
       setMapCenter({ lat: params.center_lat, lng: params.center_lng });
     } catch (error) {
-      showSnackbar('Çalışan oluşturma başarısız: ' + error.message, 'error');
+      showSnackbar('Personel oluşturma başarısız: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -238,7 +241,7 @@ function App() {
 
   const handleExcelUpload = async (result) => {
     showSnackbar(
-      `${result.imported} çalışan Excel'den aktarıldı${result.skipped > 0 ? ` (${result.skipped} mükerrer atlandı)` : ''}`,
+      `${result.imported} personel Excel'den aktarıldı${result.skipped > 0 ? ` (${result.skipped} mükerrer atlandı)` : ''}`,
       'success'
     );
     await loadSimulationData();
@@ -260,7 +263,7 @@ function App() {
           ? { ...emp, location: { lat: location.lat, lng: location.lng }, home_location: { lat: location.lat, lng: location.lng } }
           : emp
       ));
-      showSnackbar('Çalışan konumu güncellendi', 'success');
+      showSnackbar('Personel konumu güncellendi', 'success');
     } catch (error) {
       console.error('Error updating employee location:', error);
       showSnackbar('Konum güncellenirken hata oluştu', 'error');
@@ -469,7 +472,7 @@ function App() {
               routes={routes.length}
               systemStatus={systemStatus}
             />
-            <Tooltip title="Çalışanları Yenile & Haritaya Yerleştir">
+            <Tooltip title="Personelleri Yenile & Haritaya Yerleştir">
               <IconButton
                 color="inherit"
                 onClick={() => {
@@ -479,12 +482,26 @@ function App() {
                   setSelectedSimulationId(null);
                   setSelectedRouteIndex(null);
                   loadSimulationData();
-                  showSnackbar('Çalışan verileri yenilendi', 'success');
+                  showSnackbar('Personel verileri yenilendi', 'success');
                 }}
                 sx={{ ml: 1 }}
               >
                 <RefreshIcon />
               </IconButton>
+            </Tooltip>
+            <Tooltip title={showWalkingRadius ? 'Yürüme Mesafesini Gizle' : 'Yürüme Mesafesini Göster'}>
+              <Box sx={{ display: 'flex', alignItems: 'center', ml: 1, color: 'white' }}>
+                <DirectionsWalkIcon fontSize="small" />
+                <Switch
+                  checked={showWalkingRadius}
+                  onChange={(e) => setShowWalkingRadius(e.target.checked)}
+                  size="small"
+                  sx={{ 
+                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'white' },
+                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'rgba(255,255,255,0.5)' }
+                  }}
+                />
+              </Box>
             </Tooltip>
             <Tooltip title="Ayarlar">
               <IconButton
@@ -625,6 +642,7 @@ function App() {
             editingRoute={editingRoute}
             simulationHistoryOpen={simulationHistoryOpen}
             mapType={mapType}
+            showWalkingRadius={showWalkingRadius}
           />
         </Box>
 
