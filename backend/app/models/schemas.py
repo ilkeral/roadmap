@@ -14,6 +14,13 @@ class TrafficMode(str, Enum):
     EVENING_PEAK = "evening" # Evening rush hour (17:00-19:00)
 
 
+class RouteType(str, Enum):
+    """Route type for simulation"""
+    RING = "ring"           # Depot → Stops → Depot (round trip)
+    TO_HOME = "to_home"     # Depot → Stops (drop off - iş çıkışı)
+    TO_DEPOT = "to_depot"   # Stops → Depot (pick up - iş başı)
+
+
 # Traffic scaling factors based on Istanbul traffic data
 TRAFFIC_SCALING_FACTORS = {
     TrafficMode.NONE: 1.0,

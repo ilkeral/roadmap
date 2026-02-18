@@ -12,7 +12,7 @@ import json
 from geopy.distance import geodesic
 
 from app.core.database import get_db
-from app.models.schemas import OptimizationParams, Coordinate, TrafficMode, TRAFFIC_SCALING_FACTORS
+from app.models.schemas import OptimizationParams, Coordinate, TrafficMode, RouteType, TRAFFIC_SCALING_FACTORS
 from app.services.clustering_service import cluster_employees
 from app.services.osrm_service import osrm_service
 from app.services.optimization_service import create_optimized_routes
@@ -36,6 +36,7 @@ class SimulationCreate(BaseModel):
     buffer_seats: int = Field(default=0, ge=0, le=5, description="Buffer seats to leave empty per vehicle")
     depot_location: Coordinate
     shift_id: Optional[int] = Field(default=None, description="Shift ID to filter employees. None means all employees")
+    route_type: RouteType = Field(default=RouteType.RING, description="Route type: ring (round trip), to_home (iş çıkışı), to_depot (iş başı)")
 
 
 class SimulationSummary(BaseModel):
@@ -56,6 +57,7 @@ class SimulationSummary(BaseModel):
     max_walking_distance: Optional[int] = None
     num_16_seaters: Optional[int] = None
     num_27_seaters: Optional[int] = None
+    route_type: Optional[str] = None
     # Shift fields
     shift_id: Optional[int] = None
     shift_name: Optional[str] = None
@@ -95,6 +97,7 @@ class SimulationDetail(BaseModel):
     max_travel_time: Optional[int] = None
     num_16_seaters: Optional[int] = None
     num_27_seaters: Optional[int] = None
+    route_type: Optional[str] = None
     # Shift fields
     shift_id: Optional[int] = None
     shift_name: Optional[str] = None
@@ -133,7 +136,8 @@ async def ensure_simulation_tables(db: AsyncSession):
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS num_16_seaters INT DEFAULT 5",
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS num_27_seaters INT DEFAULT 5",
         "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS shift_id INT DEFAULT NULL",
-        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(100) DEFAULT NULL"
+        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS shift_name VARCHAR(100) DEFAULT NULL",
+        "ALTER TABLE simulations ADD COLUMN IF NOT EXISTS route_type VARCHAR(50) DEFAULT 'ring'"
     ]:
         try:
             await db.execute(text(col_stmt))
@@ -357,16 +361,29 @@ async def create_simulation(
                 detail=f"Verilen süre kısıtı ({params.max_travel_time} dk) ile çözüm bulunamadı. Daha uzun süre veya daha fazla araç gerekli."
             )
         
-        # Step 5: Get route geometries
+        # Step 5: Get route geometries based on route_type
         routes_with_geometry = []
+        route_type = params.route_type
+        
         for route in optimization_result["routes"]:
-            # Start from depot, go through stops, return to depot
-            route_coords = [depot]  # Start from depot
-            route_coords.extend([
+            # Filter out depot entries from stops - only get actual employee stops
+            actual_stops = [stop for stop in route["stops"] if stop.get("type") != "depot"]
+            
+            # Build route coordinates based on route_type
+            stop_coords = [
                 (stop["location"]["lat"], stop["location"]["lng"])
-                for stop in route["stops"]
-            ])
-            route_coords.append(depot)  # Return to depot
+                for stop in actual_stops
+            ]
+            
+            if route_type == RouteType.RING:
+                # Ring: Depot → Stops → Depot (tam tur)
+                route_coords = [depot] + stop_coords + [depot]
+            elif route_type == RouteType.TO_HOME:
+                # To Home: Depot → Stops (iş çıkışı - evlere bırakma)
+                route_coords = [depot] + stop_coords
+            else:  # RouteType.TO_DEPOT
+                # To Depot: Stops → Depot (iş başı - evlerden toplama)
+                route_coords = stop_coords + [depot]
             
             if len(route_coords) >= 2:
                 route_geometry = await osrm_service.get_route(route_coords, exclude_tolls=params.exclude_tolls)
@@ -374,31 +391,63 @@ async def create_simulation(
                 legs = route_geometry.get("legs", [])
                 
                 # Calculate remaining distance/duration to depot for each stop
-                # legs[0] = depot -> stop1, legs[1] = stop1 -> stop2, ..., legs[N] = stopN -> depot
-                if legs and len(route["stops"]) > 0:
-                    num_stops = len(route["stops"])
-                    for i, stop in enumerate(route["stops"]):
-                        # Calculate remaining distance from this stop to depot
-                        # This is sum of all legs from stop[i] to depot
-                        remaining_distance = 0
-                        remaining_duration = 0
-                        for j in range(i + 1, len(legs)):  # From next leg to last leg (which goes to depot)
-                            remaining_distance += legs[j].get("distance", 0)
-                            remaining_duration += legs[j].get("duration", 0)
-                        
-                        stop["distance_to_depot"] = round(remaining_distance)
-                        stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
+                if legs and len(actual_stops) > 0:
+                    num_stops = len(actual_stops)
+                    
+                    if route_type == RouteType.TO_DEPOT:
+                        # For TO_DEPOT: calculate distance FROM depot for each stop
+                        # legs[0] = stop1->stop2, ..., legs[N-1] = stopN->depot
+                        for i, stop in enumerate(actual_stops):
+                            # Distance from this stop to depot (remaining legs)
+                            remaining_distance = 0
+                            remaining_duration = 0
+                            for j in range(i, len(legs)):
+                                remaining_distance += legs[j].get("distance", 0)
+                                remaining_duration += legs[j].get("duration", 0)
+                            stop["distance_to_depot"] = round(remaining_distance)
+                            stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
+                    elif route_type == RouteType.TO_HOME:
+                        # For TO_HOME: no return to depot, show distance from depot
+                        # legs[0] = depot->stop1, legs[1] = stop1->stop2, ...
+                        cumulative_distance = 0
+                        cumulative_duration = 0
+                        for i, stop in enumerate(actual_stops):
+                            if i < len(legs):
+                                cumulative_distance += legs[i].get("distance", 0)
+                                cumulative_duration += legs[i].get("duration", 0)
+                            stop["distance_from_depot"] = round(cumulative_distance)
+                            stop["duration_from_depot"] = round(cumulative_duration * traffic_factor)
+                            # Set distance_to_depot as 0 since route doesn't return
+                            stop["distance_to_depot"] = 0
+                            stop["duration_to_depot"] = 0
+                    else:  # RING
+                        # Original logic for ring routes
+                        for i, stop in enumerate(actual_stops):
+                            remaining_distance = 0
+                            remaining_duration = 0
+                            for j in range(i + 1, len(legs)):
+                                remaining_distance += legs[j].get("distance", 0)
+                                remaining_duration += legs[j].get("duration", 0)
+                            stop["distance_to_depot"] = round(remaining_distance)
+                            stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
                 
-                # Manually add depot at start and end of polyline
-                # OSRM snaps to road network, so we need to ensure visual connection to depot
+                # Build polyline with proper start/end points
                 depot_point = {"lat": depot[0], "lng": depot[1]}
                 if osrm_polyline:
-                    # Insert depot at beginning if not already there
-                    if osrm_polyline[0] != depot_point:
-                        osrm_polyline.insert(0, depot_point)
-                    # Append depot at end if not already there
-                    if osrm_polyline[-1] != depot_point:
-                        osrm_polyline.append(depot_point)
+                    if route_type == RouteType.RING:
+                        # Ensure depot at both ends
+                        if osrm_polyline[0] != depot_point:
+                            osrm_polyline.insert(0, depot_point)
+                        if osrm_polyline[-1] != depot_point:
+                            osrm_polyline.append(depot_point)
+                    elif route_type == RouteType.TO_HOME:
+                        # Ensure depot at start only
+                        if osrm_polyline[0] != depot_point:
+                            osrm_polyline.insert(0, depot_point)
+                    else:  # TO_DEPOT
+                        # Ensure depot at end only
+                        if osrm_polyline[-1] != depot_point:
+                            osrm_polyline.append(depot_point)
                 else:
                     osrm_polyline = [depot_point]
                 
@@ -411,6 +460,8 @@ async def create_simulation(
                 route["polyline"] = []
                 route["duration"] = 0
             
+            # Replace stops with actual_stops (without depot entries)
+            route["stops"] = actual_stops
             routes_with_geometry.append(route)
         
         # Generate simulation name
@@ -426,11 +477,11 @@ async def create_simulation(
             (name, total_vehicles, total_distance, total_duration, total_passengers,
              max_walking_distance, depot_lat, depot_lng, traffic_mode, buffer_seats,
              vehicle_priority, max_travel_time, num_16_seaters, num_27_seaters,
-             shift_id, shift_name)
+             shift_id, shift_name, route_type)
             VALUES (:name, :vehicles, :distance, :duration, :passengers,
                     :walk_dist, :depot_lat, :depot_lng, :traffic_mode, :buffer_seats,
                     :vehicle_priority, :max_travel_time, :num_16_seaters, :num_27_seaters,
-                    :shift_id, :shift_name)
+                    :shift_id, :shift_name, :route_type)
             RETURNING id, created_at
         """)
         
@@ -450,7 +501,8 @@ async def create_simulation(
             "num_16_seaters": num_16,
             "num_27_seaters": num_27,
             "shift_id": params.shift_id,
-            "shift_name": shift_name
+            "shift_name": shift_name,
+            "route_type": params.route_type.value if params.route_type else "ring"
         })
         
         sim_row = result.fetchone()
@@ -539,7 +591,7 @@ async def list_simulations(
             SELECT s.id, s.name, s.total_vehicles, s.total_distance, s.total_duration,
                    s.total_passengers, s.created_at, s.traffic_mode, s.buffer_seats,
                    s.vehicle_priority, s.max_travel_time, s.max_walking_distance,
-                   s.num_16_seaters, s.num_27_seaters, s.shift_id, s.shift_name,
+                   s.num_16_seaters, s.num_27_seaters, s.shift_id, s.shift_name, s.route_type,
                    COUNT(sr.id) as route_count
             FROM simulations s
             LEFT JOIN simulation_routes sr ON s.id = sr.simulation_id
@@ -568,6 +620,7 @@ async def list_simulations(
                 max_walking_distance=row.max_walking_distance,
                 num_16_seaters=row.num_16_seaters,
                 num_27_seaters=row.num_27_seaters,
+                route_type=row.route_type,
                 shift_id=row.shift_id,
                 shift_name=row.shift_name
             )
@@ -591,7 +644,7 @@ async def get_simulation(
             SELECT id, name, total_vehicles, total_distance, total_duration,
                    total_passengers, max_walking_distance, depot_lat, depot_lng, created_at,
                    traffic_mode, buffer_seats, vehicle_priority, max_travel_time,
-                   num_16_seaters, num_27_seaters, shift_id, shift_name
+                   num_16_seaters, num_27_seaters, shift_id, shift_name, route_type
             FROM simulations WHERE id = :id
         """)
         
@@ -657,6 +710,7 @@ async def get_simulation(
             max_travel_time=sim.max_travel_time,
             num_16_seaters=sim.num_16_seaters,
             num_27_seaters=sim.num_27_seaters,
+            route_type=getattr(sim, 'route_type', 'ring'),
             shift_id=sim.shift_id,
             shift_name=sim.shift_name
         )

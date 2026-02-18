@@ -81,6 +81,7 @@ function ControlPanel({
   const [excludeTolls, setExcludeTolls] = useState(false);
   const [trafficMode, setTrafficMode] = useState('none');
   const [bufferSeats, setBufferSeats] = useState(0);
+  const [routeType, setRouteType] = useState('ring');
   const [shifts, setShifts] = useState([]);
   const [selectedShiftId, setSelectedShiftId] = useState('all'); // 'all' for all employees
   const [centerAddress, setCenterAddress] = useState('');
@@ -196,6 +197,7 @@ function ControlPanel({
       exclude_tolls: excludeTolls,
       traffic_mode: trafficMode,
       buffer_seats: bufferSeats,
+      route_type: routeType,
       shift_id: selectedShiftId === 'all' ? null : selectedShiftId
     });
   };
@@ -518,6 +520,19 @@ function ControlPanel({
                   <MenuItem value="none">🚗 Trafiksiz</MenuItem>
                   <MenuItem value="morning">🌅 Sabah 08:00 (×1.4)</MenuItem>
                   <MenuItem value="evening">🌆 Akşam 18:00 (×1.6)</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <InputLabel>Rota Tipi</InputLabel>
+                <Select
+                  value={routeType}
+                  label="Rota Tipi"
+                  onChange={(e) => setRouteType(e.target.value)}
+                >
+                  <MenuItem value="ring">🔄 Halka (Merkez → Duraklar → Merkez)</MenuItem>
+                  <MenuItem value="to_home">🏠 Evlere Bırakma (İş Çıkışı)</MenuItem>
+                  <MenuItem value="to_depot">🏢 Evlerden Toplama (İş Başı)</MenuItem>
                 </Select>
               </FormControl>
 
