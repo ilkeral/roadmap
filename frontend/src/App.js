@@ -17,7 +17,11 @@ import {
   Backdrop,
   CircularProgress,
   Fab,
-  Switch
+  Switch,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
@@ -68,6 +72,9 @@ function App() {
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(null);
   const [editingRoute, setEditingRoute] = useState(null);
   const [modifiedStops, setModifiedStops] = useState({});
+  const [stopDragDialog, setStopDragDialog] = useState(false);
+  const [stopDragPreview, setStopDragPreview] = useState(null);
+  const [pendingStopDrag, setPendingStopDrag] = useState(null);
   const [loading, setLoading] = useState(false);
   const [simulationTime, setSimulationTime] = useState(0);
   const timerRef = useRef(null);
@@ -340,8 +347,15 @@ function App() {
     }
   };
 
-  const handleStopDrag = (routeIndex, stopIndex, newLocation) => {
-    // Update local routes state immediately for visual feedback
+  const handleStopDrag = async (routeIndex, stopIndex, newLocation) => {
+    const route = routes[routeIndex];
+    if (!route || !selectedSimulationId) return;
+    
+    // Store original location
+    const originalLocation = route.stops[stopIndex]?.location;
+    if (!originalLocation) return;
+    
+    // Update visual immediately
     setRoutes(prev => {
       const updated = [...prev];
       if (updated[routeIndex] && updated[routeIndex].stops) {
@@ -357,11 +371,119 @@ function App() {
       return updated;
     });
     
-    // Track the modification
-    setModifiedStops(prev => ({
-      ...prev,
-      [stopIndex]: { stopIndex, ...newLocation }
-    }));
+    // Store pending drag info
+    setPendingStopDrag({
+      routeIndex,
+      stopIndex,
+      newLocation,
+      originalLocation,
+      routeId: route.id
+    });
+    
+    // Call preview API
+    try {
+      const preview = await api.previewRouteUpdate(selectedSimulationId, route.id, [
+        { stopIndex, lat: newLocation.lat, lng: newLocation.lng }
+      ]);
+      setStopDragPreview(preview);
+      setStopDragDialog(true);
+    } catch (error) {
+      console.error('Preview error:', error);
+      // Revert on error
+      setRoutes(prev => {
+        const updated = [...prev];
+        if (updated[routeIndex] && updated[routeIndex].stops) {
+          updated[routeIndex] = {
+            ...updated[routeIndex],
+            stops: updated[routeIndex].stops.map((stop, idx) => 
+              idx === stopIndex 
+                ? { ...stop, location: originalLocation }
+                : stop
+            )
+          };
+        }
+        return updated;
+      });
+      showSnackbar('Önizleme alınamadı', 'error');
+    }
+  };
+
+  const handleConfirmStopDrag = async () => {
+    if (!pendingStopDrag || !selectedSimulationId) return;
+    
+    const { routeIndex, stopIndex, newLocation, routeId } = pendingStopDrag;
+    
+    setStopDragDialog(false);
+    setLoading(true);
+    
+    try {
+      const result = await api.updateRouteStops(selectedSimulationId, routeId, [
+        { stopIndex, lat: newLocation.lat, lng: newLocation.lng }
+      ]);
+      
+      // Update local state with new route data
+      setRoutes(prev => {
+        const updated = [...prev];
+        updated[routeIndex] = {
+          ...updated[routeIndex],
+          distance: result.distance,
+          duration: result.duration,
+          polyline: result.polyline,
+          stops: result.stops
+        };
+        return updated;
+      });
+      
+      setSimulationHistoryRefreshKey(prev => prev + 1);
+      showSnackbar(`Rota güncellendi: ${(result.distance/1000).toFixed(1)}km, ${Math.round(result.duration/60)}dk`, 'success');
+    } catch (error) {
+      console.error('Route update error:', error);
+      // Revert on error
+      const { originalLocation } = pendingStopDrag;
+      setRoutes(prev => {
+        const updated = [...prev];
+        if (updated[routeIndex] && updated[routeIndex].stops) {
+          updated[routeIndex] = {
+            ...updated[routeIndex],
+            stops: updated[routeIndex].stops.map((stop, idx) => 
+              idx === stopIndex 
+                ? { ...stop, location: originalLocation }
+                : stop
+            )
+          };
+        }
+        return updated;
+      });
+      showSnackbar('Rota güncellenirken hata oluştu', 'error');
+    } finally {
+      setLoading(false);
+      setPendingStopDrag(null);
+      setStopDragPreview(null);
+    }
+  };
+
+  const handleCancelStopDrag = () => {
+    if (pendingStopDrag) {
+      const { routeIndex, stopIndex, originalLocation } = pendingStopDrag;
+      // Revert to original location
+      setRoutes(prev => {
+        const updated = [...prev];
+        if (updated[routeIndex] && updated[routeIndex].stops) {
+          updated[routeIndex] = {
+            ...updated[routeIndex],
+            stops: updated[routeIndex].stops.map((stop, idx) => 
+              idx === stopIndex 
+                ? { ...stop, location: originalLocation }
+                : stop
+            )
+          };
+        }
+        return updated;
+      });
+    }
+    setStopDragDialog(false);
+    setPendingStopDrag(null);
+    setStopDragPreview(null);
   };
 
   const handleSaveRouteChanges = async (routeIndex) => {
@@ -674,9 +796,6 @@ function App() {
           refreshKey={simulationHistoryRefreshKey}
           editingRoute={editingRoute}
           onStartEditRoute={handleStartEditRoute}
-          onCancelEditRoute={handleCancelEditRoute}
-          onSaveRouteChanges={handleSaveRouteChanges}
-          hasModifiedStops={Object.keys(modifiedStops).length > 0}
           showWalkingRadius={showWalkingRadius}
         />
 
@@ -714,6 +833,60 @@ function App() {
             }
           }}
         />
+
+        {/* Stop Drag Confirmation Dialog */}
+        <Dialog
+          open={stopDragDialog}
+          onClose={handleCancelStopDrag}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            📍 Durak Taşıma Onayı
+          </DialogTitle>
+          <DialogContent>
+            {stopDragPreview && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Mesafe</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {(stopDragPreview.old_distance / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={stopDragPreview.distance_diff > 0 ? 'error.main' : 'success.main'}>
+                      {(stopDragPreview.new_distance / 1000).toFixed(2)} km
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({stopDragPreview.distance_diff > 0 ? '+' : ''}{(stopDragPreview.distance_diff / 1000).toFixed(2)} km)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Süre</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {Math.round(stopDragPreview.old_duration / 60)} dk
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={stopDragPreview.duration_diff > 0 ? 'error.main' : 'success.main'}>
+                      {Math.round(stopDragPreview.new_duration / 60)} dk
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({stopDragPreview.duration_diff > 0 ? '+' : ''}{Math.round(stopDragPreview.duration_diff / 60)} dk)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleCancelStopDrag} color="inherit">
+              İptal
+            </Button>
+            <Button onClick={handleConfirmStopDrag} variant="contained" color="primary">
+              Uygula
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Snackbar for notifications */}
         <Snackbar

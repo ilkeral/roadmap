@@ -240,6 +240,17 @@ export const api = {
     return response.data;
   },
 
+  async previewRouteUpdate(simulationId, routeId, stops) {
+    const response = await client.post(`/api/simulations/${simulationId}/routes/${routeId}/preview`, {
+      stops: stops.map((s, index) => ({
+        stop_index: s.stopIndex !== undefined ? s.stopIndex : index,
+        lat: s.lat,
+        lng: s.lng
+      }))
+    });
+    return response.data;
+  },
+
   async measureDistance(points) {
     const response = await client.post('/api/routes/measure', {
       points: points.map(p => ({ lat: p.lat, lng: p.lng }))

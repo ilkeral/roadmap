@@ -30,8 +30,6 @@ import PeopleIcon from '@mui/icons-material/People';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import GroupIcon from '@mui/icons-material/Group';
 import EditIcon from '@mui/icons-material/Edit';
-import SaveIcon from '@mui/icons-material/Save';
-import CancelIcon from '@mui/icons-material/Cancel';
 import WorkIcon from '@mui/icons-material/Work';
 import { api } from '../services/api';
 
@@ -52,9 +50,6 @@ function SimulationHistory({
   refreshKey,
   editingRoute,
   onStartEditRoute,
-  onCancelEditRoute,
-  onSaveRouteChanges,
-  hasModifiedStops,
   showWalkingRadius = true
 }) {
   const [simulations, setSimulations] = useState([]);
@@ -471,38 +466,15 @@ function SimulationHistory({
                                   <GroupIcon fontSize="small" />
                                 </IconButton>
                               </Tooltip>
-                              {editingRoute === routeIndex ? (
-                                <>
-                                  <Tooltip title="Kaydet">
-                                    <IconButton
-                                      size="small"
-                                      color="success"
-                                      onClick={(e) => { e.stopPropagation(); onSaveRouteChanges(routeIndex); }}
-                                      disabled={!hasModifiedStops}
-                                    >
-                                      <SaveIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="İptal">
-                                    <IconButton
-                                      size="small"
-                                      color="error"
-                                      onClick={(e) => { e.stopPropagation(); onCancelEditRoute(); }}
-                                    >
-                                      <CancelIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                </>
-                              ) : (
-                                <Tooltip title="Durakları Düzenle">
-                                  <IconButton
-                                    size="small"
-                                    onClick={(e) => { e.stopPropagation(); onStartEditRoute(routeIndex); }}
-                                  >
-                                    <EditIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
+                              <Tooltip title={editingRoute === routeIndex ? "Düzenleme Modu Aktif" : "Durakları Düzenle"}>
+                                <IconButton
+                                  size="small"
+                                  color={editingRoute === routeIndex ? "primary" : "default"}
+                                  onClick={(e) => { e.stopPropagation(); onStartEditRoute(routeIndex); }}
+                                >
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             </Box>
                           </ListItem>
                         ))}

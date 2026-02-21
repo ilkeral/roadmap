@@ -762,6 +762,99 @@ class RouteUpdateRequest(BaseModel):
     stops: List[StopUpdate]
 
 
+@router.post("/{simulation_id}/routes/{route_id}/preview")
+async def preview_route_update(
+    simulation_id: int,
+    route_id: int,
+    request: RouteUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview route update without saving.
+    Calculates new route and returns comparison with old values.
+    """
+    try:
+        # Get simulation for depot location and traffic mode
+        sim_query = text("""
+            SELECT depot_lat, depot_lng, traffic_mode 
+            FROM simulations WHERE id = :sim_id
+        """)
+        sim_result = await db.execute(sim_query, {"sim_id": simulation_id})
+        sim = sim_result.fetchone()
+        
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+        
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+        
+        # Get current route
+        route_query = text("""
+            SELECT id, vehicle_id, vehicle_type, capacity, passengers, stops, distance, duration
+            FROM simulation_routes 
+            WHERE id = :route_id AND simulation_id = :sim_id
+        """)
+        route_result = await db.execute(route_query, {"route_id": route_id, "sim_id": simulation_id})
+        route = route_result.fetchone()
+        
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+        
+        # Store old values
+        old_distance = route.distance
+        old_duration = route.duration
+        
+        # Parse existing stops
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        
+        # Apply updates to a copy of stops
+        updated_stops = json.loads(json.dumps(existing_stops))  # Deep copy
+        stop_updates = {s.stop_index: (s.lat, s.lng) for s in request.stops}
+        
+        for stop_idx, new_location in stop_updates.items():
+            if 0 <= stop_idx < len(updated_stops):
+                updated_stops[stop_idx]["location"] = {
+                    "lat": new_location[0],
+                    "lng": new_location[1]
+                }
+        
+        # Build route coordinates: depot -> stops -> depot
+        route_coords = [depot]
+        for stop in updated_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+        
+        # Get new route from OSRM
+        route_data = await osrm_service.get_route(route_coords)
+        
+        # Apply traffic factor to duration
+        new_duration = route_data.get("duration", 0) * traffic_factor
+        new_distance = route_data.get("distance", 0)
+        
+        # Calculate differences
+        distance_diff = new_distance - old_distance
+        duration_diff = new_duration - old_duration
+        
+        return {
+            "success": True,
+            "old_distance": old_distance,
+            "old_duration": old_duration,
+            "new_distance": new_distance,
+            "new_duration": new_duration,
+            "distance_diff": distance_diff,
+            "duration_diff": duration_diff,
+            "distance_diff_percent": round((distance_diff / old_distance * 100) if old_distance else 0, 1),
+            "duration_diff_percent": round((duration_diff / old_duration * 100) if old_duration else 0, 1)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Rota önizleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/{simulation_id}/routes/{route_id}")
 async def update_route_stops(
     simulation_id: int,

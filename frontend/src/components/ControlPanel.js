@@ -338,7 +338,7 @@ function ControlPanel({
         </AccordionSummary>
         <AccordionDetails sx={{ p: 1 }}>
           {/* Vardiya Seçimi */}
-          <Accordion defaultExpanded sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+          <Accordion sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
               <WorkIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
               <Typography variant="body2" fontWeight="medium">Vardiya Seçimi</Typography>
@@ -412,7 +412,7 @@ function ControlPanel({
           </Accordion>
 
           {/* Filo Yapılandırması */}
-          <Accordion defaultExpanded sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
+          <Accordion sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
               <DirectionsBusIcon sx={{ mr: 1, fontSize: 20 }} color="primary" />
               <Typography variant="body2" fontWeight="medium">Filo Yapılandırması</Typography>
