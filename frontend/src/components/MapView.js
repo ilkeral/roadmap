@@ -252,6 +252,7 @@ function MapView({
   focusedEmployee,
   onEmployeeLocationUpdate,
   onStopDrag,
+  onSetFirstStop,
   editingRoute,
   simulationHistoryOpen,
   mapType = 'street',
@@ -348,6 +349,21 @@ function MapView({
   useEffect(() => {
     setShowEmployees(employees.length <= 500);
   }, [employees.length]);
+
+  // Find which route and stop an employee belongs to
+  const getEmployeeRouteInfo = (employeeId) => {
+    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      const route = routes[routeIndex];
+      if (!route.stops) continue;
+      for (let stopIndex = 0; stopIndex < route.stops.length; stopIndex++) {
+        const stop = route.stops[stopIndex];
+        if (stop.employee_ids && stop.employee_ids.includes(employeeId)) {
+          return { routeIndex, stopIndex, route, stop };
+        }
+      }
+    }
+    return null;
+  };
 
   // Map tile configurations
   const getTileLayer = () => {
@@ -509,6 +525,31 @@ function MapView({
                     </Button>
                   </div>
                 )}
+                {(() => {
+                  const routeInfo = getEmployeeRouteInfo(employee.id);
+                  if (routeInfo && editingRoute === routeInfo.routeIndex && routeInfo.stopIndex > 0) {
+                    return (
+                      <button
+                        onClick={() => onSetFirstStop && onSetFirstStop(routeInfo.routeIndex, routeInfo.stopIndex, routeInfo.route)}
+                        style={{
+                          width: '100%',
+                          marginTop: '10px',
+                          padding: '8px 12px',
+                          backgroundColor: '#1976d2',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        🚩 İlk Alınacak Personel Yap
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </Popup>
           </Marker>
@@ -687,6 +728,7 @@ function MapView({
           progress={animationProgress}
           onProgressChange={onSetAnimationProgress}
         />
+
       </MapContainer>
 
       {/* Editing Mode Alert */}

@@ -251,6 +251,20 @@ export const api = {
     return response.data;
   },
 
+  async previewRouteReorder(simulationId, routeId, firstStopIndex) {
+    const response = await client.post(`/api/simulations/${simulationId}/routes/${routeId}/reorder/preview`, {
+      first_stop_index: firstStopIndex
+    });
+    return response.data;
+  },
+
+  async reorderRouteStops(simulationId, routeId, firstStopIndex) {
+    const response = await client.post(`/api/simulations/${simulationId}/routes/${routeId}/reorder`, {
+      first_stop_index: firstStopIndex
+    });
+    return response.data;
+  },
+
   async measureDistance(points) {
     const response = await client.post('/api/routes/measure', {
       points: points.map(p => ({ lat: p.lat, lng: p.lng }))

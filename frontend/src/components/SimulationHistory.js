@@ -108,6 +108,14 @@ function SimulationHistory({
     // Clear route selection when selecting a new simulation
     if (onSelectRoute) onSelectRoute(null);
     
+    // Toggle expand/collapse
+    if (expandedId === simulation.id) {
+      setExpandedId(null);
+      return;
+    }
+    
+    setExpandedId(simulation.id);
+    
     // Always load fresh data from API to ensure routes are available
     try {
       const details = await api.getSimulation(simulation.id);

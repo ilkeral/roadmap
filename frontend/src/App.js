@@ -75,6 +75,9 @@ function App() {
   const [stopDragDialog, setStopDragDialog] = useState(false);
   const [stopDragPreview, setStopDragPreview] = useState(null);
   const [pendingStopDrag, setPendingStopDrag] = useState(null);
+  const [reorderDialog, setReorderDialog] = useState(false);
+  const [reorderPreview, setReorderPreview] = useState(null);
+  const [pendingReorder, setPendingReorder] = useState(null);
   const [loading, setLoading] = useState(false);
   const [simulationTime, setSimulationTime] = useState(0);
   const timerRef = useRef(null);
@@ -333,7 +336,6 @@ function App() {
     setEditingRoute(routeIndex);
     setSelectedRouteIndex(routeIndex);
     setModifiedStops({});
-    showSnackbar('Durakları sürükleyerek taşıyabilirsiniz', 'info');
   };
 
   const handleCancelEditRoute = () => {
@@ -484,6 +486,72 @@ function App() {
     setStopDragDialog(false);
     setPendingStopDrag(null);
     setStopDragPreview(null);
+  };
+
+  // Set first stop handlers
+  const handleSetFirstStop = async (routeIndex, stopIndex, route) => {
+    if (!selectedSimulationId || !route) return;
+    
+    // Store pending reorder info
+    setPendingReorder({
+      routeIndex,
+      stopIndex,
+      routeId: route.id,
+      stopName: route.stops?.[stopIndex]?.road_name || `Durak ${stopIndex + 1}`
+    });
+    
+    // Call preview API
+    try {
+      const preview = await api.previewRouteReorder(selectedSimulationId, route.id, stopIndex);
+      setReorderPreview(preview);
+      setReorderDialog(true);
+    } catch (error) {
+      console.error('Reorder preview error:', error);
+      showSnackbar('Önizleme alınamadı', 'error');
+      setPendingReorder(null);
+    }
+  };
+
+  const handleConfirmReorder = async () => {
+    if (!pendingReorder || !selectedSimulationId) return;
+    
+    const { routeIndex, stopIndex, routeId } = pendingReorder;
+    
+    setReorderDialog(false);
+    setLoading(true);
+    
+    try {
+      const result = await api.reorderRouteStops(selectedSimulationId, routeId, stopIndex);
+      
+      // Update local state with new route data
+      setRoutes(prev => {
+        const updated = [...prev];
+        updated[routeIndex] = {
+          ...updated[routeIndex],
+          distance: result.distance,
+          duration: result.duration,
+          polyline: result.polyline,
+          stops: result.stops
+        };
+        return updated;
+      });
+      
+      setSimulationHistoryRefreshKey(prev => prev + 1);
+      showSnackbar(`Rota yeniden sıralandı: ${(result.distance/1000).toFixed(1)}km, ${Math.round(result.duration/60)}dk`, 'success');
+    } catch (error) {
+      console.error('Route reorder error:', error);
+      showSnackbar('Rota yeniden sıralanamadı', 'error');
+    } finally {
+      setLoading(false);
+      setPendingReorder(null);
+      setReorderPreview(null);
+    }
+  };
+
+  const handleCancelReorder = () => {
+    setReorderDialog(false);
+    setPendingReorder(null);
+    setReorderPreview(null);
   };
 
   const handleSaveRouteChanges = async (routeIndex) => {
@@ -761,12 +829,56 @@ function App() {
             focusedEmployee={focusedEmployee}
             onEmployeeLocationUpdate={handleEmployeeLocationUpdate}
             onStopDrag={handleStopDrag}
+            onSetFirstStop={handleSetFirstStop}
             editingRoute={editingRoute}
             simulationHistoryOpen={simulationHistoryOpen}
             mapType={mapType}
             showWalkingRadius={showWalkingRadius}
           />
         </Box>
+
+        {/* Editing Mode Bottom Bar */}
+        {editingRoute !== null && (
+          <Box
+            sx={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              bgcolor: 'primary.main',
+              color: 'white',
+              py: 1.5,
+              px: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              gap: 3,
+              zIndex: 1200,
+              boxShadow: '0 -2px 10px rgba(0,0,0,0.2)'
+            }}
+          >
+            <Button
+              variant="contained"
+              color="inherit"
+              onClick={handleCancelEditRoute}
+              sx={{ 
+                color: 'primary.main', 
+                bgcolor: 'white',
+                '&:hover': { bgcolor: 'grey.100' }
+              }}
+            >
+              Moddan Çık
+            </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="body1" fontWeight="medium">
+                ✏️ Düzenleme Modu Aktif - Rota {(routes[editingRoute]?.vehicle_id || 0) + 1}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.85 }}>
+                | Yapılabilecekler: Durakları sürükle, İlk alınacak personeli değiştir
+              </Typography>
+            </Box>
+          </Box>
+        )}
 
         {/* Floating Button to Open Simulation List */}
         <Tooltip title="Simülasyon Listesi" placement="left">
@@ -883,6 +995,68 @@ function App() {
               İptal
             </Button>
             <Button onClick={handleConfirmStopDrag} variant="contained" color="primary">
+              Uygula
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Reorder Route Confirmation Dialog */}
+        <Dialog
+          open={reorderDialog}
+          onClose={handleCancelReorder}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            🚩 İlk Alınacak Personel
+          </DialogTitle>
+          <DialogContent>
+            {reorderPreview && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ p: 1.5, bgcolor: 'primary.light', borderRadius: 1, color: 'white' }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    {pendingReorder?.stopName || `Durak ${(pendingReorder?.stopIndex || 0) + 1}`}
+                  </Typography>
+                  <Typography variant="caption">
+                    Bu durak rotanın ilk durağı olacak
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Mesafe</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {(reorderPreview.old_distance / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={reorderPreview.distance_diff > 0 ? 'error.main' : 'success.main'}>
+                      {(reorderPreview.new_distance / 1000).toFixed(2)} km
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({reorderPreview.distance_diff > 0 ? '+' : ''}{(reorderPreview.distance_diff / 1000).toFixed(2)} km)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Süre</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {Math.round(reorderPreview.old_duration / 60)} dk
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={reorderPreview.duration_diff > 0 ? 'error.main' : 'success.main'}>
+                      {Math.round(reorderPreview.new_duration / 60)} dk
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({reorderPreview.duration_diff > 0 ? '+' : ''}{Math.round(reorderPreview.duration_diff / 60)} dk)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleCancelReorder} color="inherit">
+              İptal
+            </Button>
+            <Button onClick={handleConfirmReorder} variant="contained" color="primary">
               Uygula
             </Button>
           </DialogActions>

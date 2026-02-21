@@ -1010,3 +1010,215 @@ async def update_route_stops(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class ReorderRequest(BaseModel):
+    """Schema for reordering route stops"""
+    first_stop_index: int = Field(..., description="Index of the stop to become the first pickup")
+
+
+@router.post("/{simulation_id}/routes/{route_id}/reorder/preview")
+async def preview_route_reorder(
+    simulation_id: int,
+    route_id: int,
+    request: ReorderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview route reorder without saving.
+    Reorders stops so that the specified stop becomes the first pickup.
+    Returns comparison with old values.
+    """
+    try:
+        # Get simulation for depot location and traffic mode
+        sim_query = text("""
+            SELECT depot_lat, depot_lng, traffic_mode 
+            FROM simulations WHERE id = :sim_id
+        """)
+        sim_result = await db.execute(sim_query, {"sim_id": simulation_id})
+        sim = sim_result.fetchone()
+        
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+        
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+        
+        # Get current route
+        route_query = text("""
+            SELECT id, stops, distance, duration
+            FROM simulation_routes 
+            WHERE id = :route_id AND simulation_id = :sim_id
+        """)
+        route_result = await db.execute(route_query, {"route_id": route_id, "sim_id": simulation_id})
+        route = route_result.fetchone()
+        
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+        
+        # Store old values
+        old_distance = route.distance
+        old_duration = route.duration
+        
+        # Parse existing stops
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        
+        if request.first_stop_index < 0 or request.first_stop_index >= len(existing_stops):
+            raise HTTPException(status_code=400, detail="Geçersiz durak indeksi")
+        
+        # Reorder stops: make request.first_stop_index the first stop
+        # New order: [index, index+1, ..., n-1, 0, 1, ..., index-1]
+        reordered_stops = existing_stops[request.first_stop_index:] + existing_stops[:request.first_stop_index]
+        
+        # Build route coordinates: depot -> reordered stops -> depot
+        route_coords = [depot]
+        for stop in reordered_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+        
+        # Get new route from OSRM
+        route_data = await osrm_service.get_route(route_coords)
+        
+        # Apply traffic factor to duration
+        new_duration = route_data.get("duration", 0) * traffic_factor
+        new_distance = route_data.get("distance", 0)
+        
+        # Calculate differences
+        distance_diff = new_distance - old_distance
+        duration_diff = new_duration - old_duration
+        
+        return {
+            "success": True,
+            "old_distance": old_distance,
+            "old_duration": old_duration,
+            "new_distance": new_distance,
+            "new_duration": new_duration,
+            "distance_diff": distance_diff,
+            "duration_diff": duration_diff,
+            "distance_diff_percent": round((distance_diff / old_distance * 100) if old_distance else 0, 1),
+            "duration_diff_percent": round((duration_diff / old_duration * 100) if old_duration else 0, 1),
+            "first_stop_name": existing_stops[request.first_stop_index].get("road_name", f"Durak {request.first_stop_index + 1}")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Rota yeniden sıralama önizleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{simulation_id}/routes/{route_id}/reorder")
+async def reorder_route_stops(
+    simulation_id: int,
+    route_id: int,
+    request: ReorderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reorder route stops so that the specified stop becomes the first pickup.
+    Recalculates the route accordingly.
+    """
+    try:
+        # Get simulation for depot location and traffic mode
+        sim_query = text("""
+            SELECT depot_lat, depot_lng, traffic_mode 
+            FROM simulations WHERE id = :sim_id
+        """)
+        sim_result = await db.execute(sim_query, {"sim_id": simulation_id})
+        sim = sim_result.fetchone()
+        
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+        
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+        
+        # Get current route
+        route_query = text("""
+            SELECT id, vehicle_id, vehicle_type, capacity, passengers, stops
+            FROM simulation_routes 
+            WHERE id = :route_id AND simulation_id = :sim_id
+        """)
+        route_result = await db.execute(route_query, {"route_id": route_id, "sim_id": simulation_id})
+        route = route_result.fetchone()
+        
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+        
+        # Parse existing stops
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        
+        if request.first_stop_index < 0 or request.first_stop_index >= len(existing_stops):
+            raise HTTPException(status_code=400, detail="Geçersiz durak indeksi")
+        
+        # Reorder stops: make request.first_stop_index the first stop
+        reordered_stops = existing_stops[request.first_stop_index:] + existing_stops[:request.first_stop_index]
+        
+        # Build route coordinates: depot -> reordered stops -> depot
+        route_coords = [depot]
+        for stop in reordered_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+        
+        # Get new route from OSRM
+        route_data = await osrm_service.get_route(route_coords)
+        
+        # Apply traffic factor to duration
+        new_duration = route_data.get("duration", 0) * traffic_factor
+        new_distance = route_data.get("distance", 0)
+        new_polyline = route_data.get("geometry", [])
+        
+        # Update database
+        update_query = text("""
+            UPDATE simulation_routes 
+            SET distance = :distance, duration = :duration, 
+                polyline = :polyline, stops = :stops
+            WHERE id = :route_id
+        """)
+        await db.execute(update_query, {
+            "route_id": route_id,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": json.dumps(new_polyline),
+            "stops": json.dumps(reordered_stops)
+        })
+        
+        # Update simulation totals
+        totals_query = text("""
+            SELECT SUM(distance) as total_dist, SUM(duration) as total_dur
+            FROM simulation_routes WHERE simulation_id = :sim_id
+        """)
+        totals_result = await db.execute(totals_query, {"sim_id": simulation_id})
+        totals = totals_result.fetchone()
+        
+        await db.execute(text("""
+            UPDATE simulations 
+            SET total_distance = :dist, total_duration = :dur
+            WHERE id = :sim_id
+        """), {
+            "sim_id": simulation_id,
+            "dist": totals.total_dist or 0,
+            "dur": totals.total_dur or 0
+        })
+        
+        await db.commit()
+        
+        logger.info(f"Rota {route_id} yeniden sıralandı: {new_distance/1000:.1f}km, {new_duration/60:.0f}dk")
+        
+        return {
+            "success": True,
+            "route_id": route_id,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": new_polyline,
+            "stops": reordered_stops
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Rota yeniden sıralama hatası: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
