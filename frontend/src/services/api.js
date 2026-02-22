@@ -297,6 +297,11 @@ export const api = {
     return response.data;
   },
 
+  async reoptimizeRoute(simulationId, routeId) {
+    const response = await client.post(`/api/simulations/${simulationId}/routes/${routeId}/reoptimize`);
+    return response.data;
+  },
+
   async measureDistance(points) {
     const response = await client.post('/api/routes/measure', {
       points: points.map(p => ({ lat: p.lat, lng: p.lng }))

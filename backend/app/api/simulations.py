@@ -1734,3 +1734,352 @@ async def reorder_route_stops(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/{simulation_id}/routes/{route_id}/reoptimize")
+async def reoptimize_route(
+    simulation_id: int,
+    route_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Tek bir rotayı simülasyon ayarlarıyla yeniden optimize eder.
+    Rotadaki mevcut personelleri alır, yeniden kümeleme ve TSP çözümü yapar.
+    """
+    try:
+        # 1. Simülasyon parametrelerini al
+        sim_result = await db.execute(
+            text("""
+                SELECT depot_lat, depot_lng, traffic_mode, max_walking_distance,
+                       buffer_seats, vehicle_priority, max_travel_time, route_type
+                FROM simulations WHERE id = :sim_id
+            """),
+            {"sim_id": simulation_id}
+        )
+        sim = sim_result.fetchone()
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+        route_type_str = getattr(sim, 'route_type', 'ring') or 'ring'
+        try:
+            route_type = RouteType(route_type_str)
+        except ValueError:
+            route_type = RouteType.RING
+
+        # 2. Mevcut rotayı al
+        route_result = await db.execute(
+            text("""
+                SELECT id, vehicle_id, vehicle_type, capacity, stops, distance, duration
+                FROM simulation_routes
+                WHERE id = :route_id AND simulation_id = :sim_id
+            """),
+            {"route_id": route_id, "sim_id": simulation_id}
+        )
+        route = route_result.fetchone()
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        old_distance = route.distance
+        old_duration = route.duration
+
+        # 3. Rotadaki tüm personel ID'lerini topla
+        all_employee_ids = []
+        for stop in existing_stops:
+            all_employee_ids.extend(stop.get("employee_ids", []))
+
+        if not all_employee_ids:
+            raise HTTPException(status_code=400, detail="Bu rotada personel bulunamadı")
+
+        # 4. Personel bilgilerini veritabanından al
+        emp_result = await db.execute(
+            text("""
+                SELECT id, name,
+                       ST_Y(home_location::geometry) as lat,
+                       ST_X(home_location::geometry) as lng
+                FROM employees WHERE id = ANY(:ids)
+            """),
+            {"ids": all_employee_ids}
+        )
+        employees = [
+            {"id": row.id, "name": row.name, "lat": row.lat, "lng": row.lng}
+            for row in emp_result.fetchall()
+        ]
+
+        if not employees:
+            raise HTTPException(status_code=400, detail="Personel bilgileri bulunamadı")
+
+        # 5. Personelleri yeniden kümele
+        clustering_result = cluster_employees(
+            employee_data=employees,
+            max_walking_distance=sim.max_walking_distance,
+            method="dbscan"
+        )
+        stops = clustering_result["stops"]
+
+        if not stops:
+            raise HTTPException(status_code=400, detail="Durak oluşturulamadı")
+
+        # 6. Durakları yol ağına yapıştır (snap to road)
+        stop_coords = [(s["location"]["lat"], s["location"]["lng"]) for s in stops]
+        snapped_results = await osrm_service.snap_multiple_to_road(stop_coords)
+
+        employee_lookup = {e["id"]: e for e in employees}
+
+        for i, (stop, snap_result) in enumerate(zip(stops, snapped_results)):
+            # Personel isimlerini ekle
+            employee_names = []
+            for emp_id in stop.get("employee_ids", []):
+                emp = employee_lookup.get(emp_id)
+                if emp:
+                    employee_names.append(emp.get("name", f"Çalışan #{emp_id}"))
+            stop["employee_names"] = employee_names
+
+            if snap_result.get("valid"):
+                stop["original_location"] = stop["location"].copy()
+                stop["location"] = snap_result["snapped"]
+                stop["road_name"] = snap_result.get("road_name", "")
+
+                max_walk = 0
+                employee_walks = []
+                for emp_id in stop.get("employee_ids", []):
+                    emp = employee_lookup.get(emp_id)
+                    if emp:
+                        walk_dist = geodesic(
+                            (emp["lat"], emp["lng"]),
+                            (stop["location"]["lat"], stop["location"]["lng"])
+                        ).meters
+                        max_walk = max(max_walk, walk_dist)
+                        employee_walks.append({
+                            "employee_id": emp_id,
+                            "walking_distance": round(walk_dist)
+                        })
+
+                stop["max_walking_distance"] = round(max_walk)
+                stop["employee_walking_distances"] = employee_walks
+            else:
+                stop["max_walking_distance"] = stop.get("max_distance_to_centroid", 0)
+
+        # 7. OSRM mesafe matrisi al
+        coordinates = [depot]
+        coordinates.extend([
+            (stop["location"]["lat"], stop["location"]["lng"])
+            for stop in stops
+        ])
+
+        matrix_result = await osrm_service.get_distance_matrix(coordinates)
+
+        # Trafik ölçeklendirmesi
+        duration_matrix = matrix_result.get("durations")
+        if duration_matrix and traffic_factor != 1.0:
+            duration_matrix = [
+                [int(d * traffic_factor) for d in row]
+                for row in duration_matrix
+            ]
+
+        max_route_duration = int(sim.max_travel_time * 60 * traffic_factor)
+
+        # 8. Tek araç ile TSP çöz (CVRP solver, 1 araç)
+        # Araç kapasitesini ve tipini koruyoruz
+        vehicle_capacity = route.capacity
+        buffer_seats = sim.buffer_seats or 0
+        effective_capacity = max(1, vehicle_capacity - buffer_seats)
+
+        # Demands: depot=0, stops=employee_count
+        demands = [0]
+        demands.extend([stop["employee_count"] for stop in stops])
+
+        from app.services.optimization_service import CVRPSolver
+
+        solver = CVRPSolver(
+            distance_matrix=matrix_result["distances"],
+            demands=demands,
+            vehicle_capacities=[effective_capacity],
+            depot_index=0,
+            time_limit_seconds=15,
+            priority_vehicle_count=0,
+            duration_matrix=duration_matrix,
+            max_route_duration=max_route_duration
+        )
+
+        solution = solver.solve()
+
+        if solution.get("status") == "NO_SOLUTION" or solution.get("vehicles_used", 0) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Mevcut araç kapasitesi ile yeniden optimizasyon yapılamadı."
+            )
+
+        # Çözümdeki ilk (ve tek) rotayı al
+        optimized_route_indices = None
+        for veh_route in solution["routes"]:
+            if veh_route and len(veh_route) > 2:
+                optimized_route_indices = veh_route
+                break
+
+        if not optimized_route_indices:
+            raise HTTPException(status_code=400, detail="Optimizasyon sonucu rota üretilemedi")
+
+        # Durakları optimize edilmiş sıraya göre düzenle
+        optimized_stops = []
+        for node in optimized_route_indices:
+            if node == 0:
+                continue  # Depo, atla
+            stop = stops[node - 1]
+            optimized_stops.append(stop)
+
+        # 9. Rota geometrisini OSRM'den al (route_type'a göre)
+        stop_coords_ordered = [
+            (s["location"]["lat"], s["location"]["lng"])
+            for s in optimized_stops
+        ]
+
+        if route_type == RouteType.RING:
+            route_coords = [depot] + stop_coords_ordered + [depot]
+        elif route_type == RouteType.TO_HOME:
+            route_coords = [depot] + stop_coords_ordered
+        else:  # TO_DEPOT
+            route_coords = stop_coords_ordered + [depot]
+
+        new_distance = 0.0
+        new_duration = 0.0
+        new_polyline = []
+
+        if len(route_coords) >= 2:
+            route_geometry = await osrm_service.get_route(route_coords)
+            new_polyline = route_geometry.get("geometry", [])
+            new_distance = route_geometry.get("distance", 0)
+            raw_duration = route_geometry.get("duration", 0)
+            new_duration = raw_duration * traffic_factor
+            legs = route_geometry.get("legs", [])
+
+            # Duraklar için mesafe/süre hesapla (route_type'a göre)
+            if legs and len(optimized_stops) > 0:
+                if route_type == RouteType.TO_DEPOT:
+                    for i, stop in enumerate(optimized_stops):
+                        remaining_distance = 0
+                        remaining_duration = 0
+                        for j in range(i, len(legs)):
+                            remaining_distance += legs[j].get("distance", 0)
+                            remaining_duration += legs[j].get("duration", 0)
+                        stop["distance_to_depot"] = round(remaining_distance)
+                        stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
+                elif route_type == RouteType.TO_HOME:
+                    cumulative_distance = 0
+                    cumulative_duration = 0
+                    for i, stop in enumerate(optimized_stops):
+                        if i < len(legs):
+                            cumulative_distance += legs[i].get("distance", 0)
+                            cumulative_duration += legs[i].get("duration", 0)
+                        stop["distance_from_depot"] = round(cumulative_distance)
+                        stop["duration_from_depot"] = round(cumulative_duration * traffic_factor)
+                        stop["distance_to_depot"] = 0
+                        stop["duration_to_depot"] = 0
+                else:  # RING
+                    for i, stop in enumerate(optimized_stops):
+                        remaining_distance = 0
+                        remaining_duration = 0
+                        for j in range(i + 1, len(legs)):
+                            remaining_distance += legs[j].get("distance", 0)
+                            remaining_duration += legs[j].get("duration", 0)
+                        stop["distance_to_depot"] = round(remaining_distance)
+                        stop["duration_to_depot"] = round(remaining_duration * traffic_factor)
+
+            # Polyline'a depo noktasını ekle
+            depot_point = {"lat": depot[0], "lng": depot[1]}
+            if new_polyline:
+                if route_type == RouteType.RING:
+                    if new_polyline[0] != depot_point:
+                        new_polyline.insert(0, depot_point)
+                    if new_polyline[-1] != depot_point:
+                        new_polyline.append(depot_point)
+                elif route_type == RouteType.TO_HOME:
+                    if new_polyline[0] != depot_point:
+                        new_polyline.insert(0, depot_point)
+                else:
+                    if new_polyline[-1] != depot_point:
+                        new_polyline.append(depot_point)
+
+        new_passengers = sum(s.get("employee_count", 0) for s in optimized_stops)
+
+        # numpy tiplerini dönüştür
+        def convert_to_native(obj):
+            if isinstance(obj, dict):
+                return {k: convert_to_native(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_native(item) for item in obj]
+            elif hasattr(obj, 'item'):
+                return obj.item()
+            return obj
+
+        polyline_data = convert_to_native(new_polyline)
+        stops_data = convert_to_native(optimized_stops)
+
+        # 10. Veritabanını güncelle
+        await db.execute(text("""
+            UPDATE simulation_routes
+            SET distance = :distance, duration = :duration,
+                polyline = :polyline, stops = :stops, passengers = :passengers
+            WHERE id = :route_id
+        """), {
+            "route_id": route_id,
+            "distance": float(new_distance),
+            "duration": float(new_duration),
+            "polyline": json.dumps(polyline_data),
+            "stops": json.dumps(stops_data),
+            "passengers": int(new_passengers)
+        })
+
+        # Simülasyon toplamlarını güncelle
+        totals_result = await db.execute(
+            text("""
+                SELECT SUM(distance) as total_dist, SUM(duration) as total_dur,
+                       SUM(passengers) as total_pass
+                FROM simulation_routes WHERE simulation_id = :sim_id
+            """),
+            {"sim_id": simulation_id}
+        )
+        totals = totals_result.fetchone()
+        await db.execute(text("""
+            UPDATE simulations
+            SET total_distance = :dist, total_duration = :dur, total_passengers = :pass
+            WHERE id = :sim_id
+        """), {
+            "sim_id": simulation_id,
+            "dist": totals.total_dist or 0,
+            "dur": totals.total_dur or 0,
+            "pass": totals.total_pass or 0
+        })
+
+        await db.commit()
+
+        logger.info(
+            f"Rota {route_id} yeniden optimize edildi: "
+            f"{old_distance/1000:.1f}km → {new_distance/1000:.1f}km, "
+            f"{old_duration/60:.0f}dk → {new_duration/60:.0f}dk"
+        )
+
+        return {
+            "success": True,
+            "route_id": route_id,
+            "old_distance": old_distance,
+            "old_duration": old_duration,
+            "new_distance": new_distance,
+            "new_duration": new_duration,
+            "distance_diff": new_distance - old_distance,
+            "duration_diff": new_duration - old_duration,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": polyline_data,
+            "stops": stops_data,
+            "passengers": new_passengers
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Rota yeniden optimizasyon hatası: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+

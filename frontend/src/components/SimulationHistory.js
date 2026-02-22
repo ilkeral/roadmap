@@ -30,6 +30,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import GroupIcon from '@mui/icons-material/Group';
 import EditIcon from '@mui/icons-material/Edit';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import WorkIcon from '@mui/icons-material/Work';
 import { api } from '../services/api';
 
@@ -50,7 +51,8 @@ function SimulationHistory({
   refreshKey,
   editingRoute,
   onStartEditRoute,
-  showWalkingRadius = true
+  showWalkingRadius = true,
+  onReoptimizeRoute
 }) {
   const [simulations, setSimulations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -58,6 +60,7 @@ function SimulationHistory({
   const [simulationDetails, setSimulationDetails] = useState({});
   const [loadingDetails, setLoadingDetails] = useState({});
   const [employeeDialog, setEmployeeDialog] = useState({ open: false, route: null, employees: [] });
+  const [reoptimizingRouteId, setReoptimizingRouteId] = useState(null);
 
   useEffect(() => {
     if (open) {
@@ -482,6 +485,29 @@ function SimulationHistory({
                                 >
                                   <EditIcon fontSize="small" />
                                 </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Rotayı Yeniden Optimize Et">
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    color="secondary"
+                                    disabled={reoptimizingRouteId === route.id}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!onReoptimizeRoute) return;
+                                      setReoptimizingRouteId(route.id);
+                                      try {
+                                        await onReoptimizeRoute(sim.id, route.id, routeIndex);
+                                      } finally {
+                                        setReoptimizingRouteId(null);
+                                      }
+                                    }}
+                                  >
+                                    {reoptimizingRouteId === route.id 
+                                      ? <CircularProgress size={18} /> 
+                                      : <RefreshIcon fontSize="small" />}
+                                  </IconButton>
+                                </span>
                               </Tooltip>
                             </Box>
                           </ListItem>

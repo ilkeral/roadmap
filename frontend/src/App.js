@@ -357,6 +357,33 @@ function App() {
     setModifiedStops({});
   };
 
+  const handleReoptimizeRoute = async (simulationId, routeId, routeIndex) => {
+    try {
+      const result = await api.reoptimizeRoute(simulationId, routeId);
+      if (result.success) {
+        // Simülasyonu yeniden yükle
+        const details = await api.getSimulation(simulationId);
+        setRoutes(details.routes || []);
+        setOptimizationResult(details);
+        setSimulationHistoryRefreshKey(prev => prev + 1);
+
+        const distDiff = ((result.new_distance - result.old_distance) / 1000).toFixed(1);
+        const durDiff = ((result.new_duration - result.old_duration) / 60).toFixed(0);
+        const sign = (v) => v > 0 ? '+' : '';
+        showSnackbar(
+          `Rota yeniden optimize edildi: ${sign(distDiff)}${distDiff} km, ${sign(durDiff)}${durDiff} dk`,
+          'success'
+        );
+      }
+    } catch (error) {
+      console.error('Rota yeniden optimizasyon hatası:', error);
+      showSnackbar(
+        error.response?.data?.detail || 'Rota yeniden optimize edilemedi',
+        'error'
+      );
+    }
+  };
+
   const handleCancelEditRoute = () => {
     setEditingRoute(null);
     setModifiedStops({});
@@ -1050,6 +1077,7 @@ function App() {
           editingRoute={editingRoute}
           onStartEditRoute={handleStartEditRoute}
           showWalkingRadius={showWalkingRadius}
+          onReoptimizeRoute={handleReoptimizeRoute}
         />
 
         {/* Simulation Progress Overlay */}
