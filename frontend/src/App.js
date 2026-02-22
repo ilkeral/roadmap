@@ -102,6 +102,16 @@ function App() {
   const [mapType, setMapType] = useState('street');
   const [showWalkingRadius, setShowWalkingRadius] = useState(true);
 
+  // Daire seçim durumları
+  const [circleSelectDialog, setCircleSelectDialog] = useState(false);
+  const [circleSelectionData, setCircleSelectionData] = useState(null);
+  const [currentSimParams, setCurrentSimParams] = useState(null);
+  const [routeColors, setRouteColors] = useState({});
+
+  const handleRouteColorChange = (routeIndex, color) => {
+    setRouteColors(prev => ({ ...prev, [routeIndex]: color }));
+  };
+
   // Simülasyon seçiliyse yalnızca o simülasyondaki personelleri haritada göster
   const mapEmployees = useMemo(() => {
     if (routes.length === 0) return employees;
@@ -381,6 +391,48 @@ function App() {
         error.response?.data?.detail || 'Rota yeniden optimize edilemedi',
         'error'
       );
+    }
+  };
+
+  // Daire seçim tamamlandığında - dialog göster
+  const handleCircleSelect = (selectionData) => {
+    setCircleSelectionData(selectionData);
+    setCircleSelectDialog(true);
+  };
+
+  // Daire seçiminden simülasyon başlat
+  const handleConfirmCircleSimulation = async () => {
+    if (!circleSelectionData) return;
+    setCircleSelectDialog(false);
+
+    const params = {
+      ...currentSimParams,
+      depot_location: depotLocation,
+      employee_ids: circleSelectionData.employeeIds,
+      name: `Alan Seçimi (${circleSelectionData.employees.length} personel, ${(circleSelectionData.radius / 1000).toFixed(1)}km)`
+    };
+
+    setLoading(true);
+    try {
+      const result = await api.createSimulation(params);
+      const details = await api.getSimulation(result.id);
+
+      setOptimizationResult(details);
+      setRoutes(details.routes || []);
+      setStops([]);
+      setSelectedSimulationId(result.id);
+      setCircleSelectionData(null);
+
+      showSnackbar(
+        `Alan simülasyonu oluşturuldu: ${result.total_vehicles} araç, ${(result.total_distance / 1000).toFixed(1)} km`,
+        'success'
+      );
+      setSimulationHistoryRefreshKey(prev => prev + 1);
+      await loadSimulationData();
+    } catch (error) {
+      showSnackbar('Simülasyon oluşturulamadı: ' + (error.response?.data?.detail || error.message), 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -917,6 +969,7 @@ function App() {
             onUpdateCenter={handleUpdateCenter}
             onShowSimulationHistory={handleShowSimulationHistory}
             onSelectRoute={handleSelectRoute}
+            onParamsChange={setCurrentSimParams}
           />
         </Drawer>
 
@@ -1002,6 +1055,9 @@ function App() {
             simulationHistoryOpen={simulationHistoryOpen}
             mapType={mapType}
             showWalkingRadius={showWalkingRadius}
+            onCircleSelect={handleCircleSelect}
+            routeColors={routeColors}
+            onRouteColorChange={handleRouteColorChange}
           />
         </Box>
 
@@ -1078,6 +1134,7 @@ function App() {
           onStartEditRoute={handleStartEditRoute}
           showWalkingRadius={showWalkingRadius}
           onReoptimizeRoute={handleReoptimizeRoute}
+          routeColors={routeColors}
         />
 
         {/* Simulation Progress Overlay */}
@@ -1352,6 +1409,56 @@ function App() {
             </Button>
             <Button onClick={handleConfirmReorder} variant="contained" color="primary">
               Uygula
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Daire seçimi onay dialog */}
+        <Dialog
+          open={circleSelectDialog}
+          onClose={() => { setCircleSelectDialog(false); setCircleSelectionData(null); }}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            <Typography variant="h6" fontWeight="bold">
+              Alan Seçimi - Simülasyon Oluştur
+            </Typography>
+          </DialogTitle>
+          <DialogContent>
+            {circleSelectionData && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+                <Box sx={{ bgcolor: 'primary.50', border: '1px solid', borderColor: 'primary.200', borderRadius: 1, p: 1.5 }}>
+                  <Typography variant="subtitle2" color="primary.main" gutterBottom>Seçim Bilgileri</Typography>
+                  <Typography variant="body2">Seçilen personel sayısı: <strong>{circleSelectionData.employees.length}</strong></Typography>
+                  <Typography variant="body2">Daire yarıçapı: <strong>{circleSelectionData.radius >= 1000 ? (circleSelectionData.radius / 1000).toFixed(1) + ' km' : Math.round(circleSelectionData.radius) + ' m'}</strong></Typography>
+                </Box>
+                {currentSimParams && (
+                  <Box sx={{ bgcolor: 'grey.50', border: '1px solid', borderColor: 'grey.300', borderRadius: 1, p: 1.5 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>Simülasyon Parametreleri</Typography>
+                    <Typography variant="body2">Maks. yürüme mesafesi: <strong>{currentSimParams.max_walking_distance || '-'} m</strong></Typography>
+                    <Typography variant="body2">16 koltuk: <strong>{currentSimParams.use_16_seaters ?? '-'}</strong>, 27 koltuk: <strong>{currentSimParams.use_27_seaters ?? '-'}</strong></Typography>
+                    <Typography variant="body2">Maks. seyahat süresi: <strong>{currentSimParams.max_travel_time || '-'} dk</strong></Typography>
+                    <Typography variant="body2">Trafik: <strong>{currentSimParams.traffic_mode === 'historical' ? 'Geçmiş' : 'Gerçek zamanlı'}</strong></Typography>
+                  </Box>
+                )}
+                {circleSelectionData.employees.length === 0 && (
+                  <Alert severity="warning">Seçilen alanda personel bulunamadı.</Alert>
+                )}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => { setCircleSelectDialog(false); setCircleSelectionData(null); }} color="inherit">
+              İptal
+            </Button>
+            <Button
+              onClick={handleConfirmCircleSimulation}
+              variant="contained"
+              color="primary"
+              disabled={!circleSelectionData || circleSelectionData.employees.length === 0}
+            >
+              Simülasyonu Başlat
             </Button>
           </DialogActions>
         </Dialog>

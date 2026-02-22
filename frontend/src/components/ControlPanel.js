@@ -71,7 +71,8 @@ function ControlPanel({
   onAddNewEmployee,
   onUpdateCenter,
   onShowSimulationHistory,
-  onSelectRoute
+  onSelectRoute,
+  onParamsChange
 }) {
   const [maxWalkingDistance, setMaxWalkingDistance] = useState(200);
   const [num16Seaters, setNum16Seaters] = useState(5);
@@ -201,6 +202,24 @@ function ControlPanel({
       shift_id: selectedShiftId === 'all' ? null : selectedShiftId
     });
   };
+
+  // Parametreler değiştiğinde üst bileşene bildir
+  useEffect(() => {
+    if (onParamsChange) {
+      onParamsChange({
+        max_walking_distance: maxWalkingDistance,
+        use_16_seaters: num16Seaters,
+        use_27_seaters: num27Seaters,
+        vehicle_priority: vehiclePriority,
+        max_travel_time: maxTravelTime,
+        exclude_tolls: excludeTolls,
+        traffic_mode: trafficMode,
+        buffer_seats: bufferSeats,
+        route_type: routeType,
+        shift_id: selectedShiftId === 'all' ? null : selectedShiftId
+      });
+    }
+  }, [maxWalkingDistance, num16Seaters, num27Seaters, vehiclePriority, maxTravelTime, excludeTolls, trafficMode, bufferSeats, routeType, selectedShiftId]);
 
   // Get selected employee count for the selected shift
   const getSelectedEmployeeCount = () => {

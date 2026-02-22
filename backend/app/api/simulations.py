@@ -37,6 +37,7 @@ class SimulationCreate(BaseModel):
     depot_location: Coordinate
     shift_id: Optional[int] = Field(default=None, description="Shift ID to filter employees. None means all employees")
     route_type: RouteType = Field(default=RouteType.RING, description="Route type: ring (round trip), to_home (iş çıkışı), to_depot (iş başı)")
+    employee_ids: Optional[List[int]] = Field(default=None, description="Specific employee IDs to include. Overrides shift_id filter.")
 
 
 class SimulationSummary(BaseModel):
@@ -175,7 +176,10 @@ async def create_simulation(
         
         # Get shift info if shift_id is provided
         shift_name = None
-        if params.shift_id is not None:
+        if params.employee_ids is not None and len(params.employee_ids) > 0:
+            # Alan seçimi modu - belirli personeller
+            shift_name = f"Alan Seçimi ({len(params.employee_ids)} personel)"
+        elif params.shift_id is not None:
             shift_query = text("SELECT name FROM shifts WHERE id = :shift_id")
             shift_result = await db.execute(shift_query, {"shift_id": params.shift_id})
             shift_row = shift_result.fetchone()
@@ -186,8 +190,17 @@ async def create_simulation(
         else:
             shift_name = "Tüm Çalışanlar"
         
-        # Step 1: Fetch employees (filtered by shift_id if provided)
-        if params.shift_id is not None:
+        # Step 1: Fetch employees (filtered by employee_ids, shift_id, or all)
+        if params.employee_ids is not None and len(params.employee_ids) > 0:
+            query = text("""
+                SELECT id, name, 
+                       ST_Y(home_location) as lat, 
+                       ST_X(home_location) as lng
+                FROM employees
+                WHERE id = ANY(:ids)
+            """)
+            result = await db.execute(query, {"ids": params.employee_ids})
+        elif params.shift_id is not None:
             query = text("""
                 SELECT id, name, 
                        ST_Y(home_location) as lat, 

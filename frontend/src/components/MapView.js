@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { Box, Button, Alert, IconButton, Tooltip, Paper, Typography } from '@mui/material';
+import { Box, Button, Alert, IconButton, Tooltip, Paper, Typography, Popover } from '@mui/material';
 import EditLocationIcon from '@mui/icons-material/EditLocation';
 import StraightenIcon from '@mui/icons-material/Straighten';
+import AdjustIcon from '@mui/icons-material/Adjust';
+import PaletteIcon from '@mui/icons-material/Palette';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { api } from '../services/api';
 
@@ -65,11 +67,18 @@ const busIcon = L.divIcon({
   iconAnchor: [15, 15],
 });
 
-// Rota renkleri - belirgin renkler
+// Rota renkleri - Tableau 10 palette
 const ROUTE_COLORS = [
-  '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-  '#00CED1', '#DC143C', '#32CD32', '#FF1493', '#1E90FF',
-  '#FFD700', '#8B4513', '#00FF7F', '#9400D3', '#FF6347'
+  '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+  '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'
+];
+
+// Renk seçici paleti - Tableau 20 Paired
+const COLOR_PALETTE = [
+  '#4e79a7', '#a0cbe8', '#f28e2b', '#ffbe7d', '#59a14f',
+  '#8cd17d', '#b6992d', '#f1ce63', '#499894', '#86bcb6',
+  '#e15759', '#ff9d9a', '#79706e', '#bab0ac', '#d37295',
+  '#fabfd2', '#b07aa1', '#d4a6c8', '#9d7660', '#d7b5a6'
 ];
 
 // Harita merkezi güncelleyici bileşeni
@@ -204,9 +213,10 @@ function AnimationController({
 }
 
 // Harita tıklama işleyicisi - personel konumu düzenleme ve ölçüm
-function MapClickHandler({ editingEmployee, measureMode, onMapClick, onMeasureClick }) {
+function MapClickHandler({ editingEmployee, measureMode, circleSelectMode, onMapClick, onMeasureClick }) {
   useMapEvents({
     click: (e) => {
+      if (circleSelectMode) return; // Daire seçim modunda tıklamayı yoksay
       if (measureMode) {
         onMeasureClick(e.latlng);
       } else if (editingEmployee) {
@@ -215,6 +225,88 @@ function MapClickHandler({ editingEmployee, measureMode, onMapClick, onMeasureCl
     },
   });
   return null;
+}
+
+// Daire çizim işleyicisi
+function CircleDrawHandler({ active, onCircleDrawn }) {
+  const map = useMap();
+  const [drawing, setDrawing] = useState(false);
+  const [center, setCenter] = useState(null);
+  const [radius, setRadius] = useState(0);
+  const drawingRef = useRef(false);
+  const centerRef = useRef(null);
+
+  useEffect(() => {
+    if (!active) {
+      setDrawing(false);
+      setCenter(null);
+      setRadius(0);
+      drawingRef.current = false;
+      centerRef.current = null;
+      map.dragging.enable();
+      map.getContainer().style.cursor = '';
+      return;
+    }
+
+    map.getContainer().style.cursor = 'crosshair';
+
+    const onMouseDown = (e) => {
+      if (!active) return;
+      drawingRef.current = true;
+      centerRef.current = e.latlng;
+      setDrawing(true);
+      setCenter(e.latlng);
+      setRadius(0);
+      map.dragging.disable();
+    };
+
+    const onMouseMove = (e) => {
+      if (!drawingRef.current || !centerRef.current) return;
+      const dist = centerRef.current.distanceTo(e.latlng);
+      setRadius(dist);
+    };
+
+    const onMouseUp = (e) => {
+      if (!drawingRef.current || !centerRef.current) return;
+      const finalRadius = centerRef.current.distanceTo(e.latlng);
+      drawingRef.current = false;
+      setDrawing(false);
+      map.dragging.enable();
+
+      if (finalRadius >= 50) {
+        onCircleDrawn(centerRef.current, finalRadius);
+      }
+      centerRef.current = null;
+    };
+
+    map.on('mousedown', onMouseDown);
+    map.on('mousemove', onMouseMove);
+    map.on('mouseup', onMouseUp);
+
+    return () => {
+      map.off('mousedown', onMouseDown);
+      map.off('mousemove', onMouseMove);
+      map.off('mouseup', onMouseUp);
+      map.dragging.enable();
+      map.getContainer().style.cursor = '';
+    };
+  }, [active, map, onCircleDrawn]);
+
+  if (!drawing || !center) return null;
+
+  return (
+    <Circle
+      center={[center.lat, center.lng]}
+      radius={radius}
+      pathOptions={{
+        color: '#FF9800',
+        weight: 2,
+        dashArray: '6 4',
+        fillColor: '#FF9800',
+        fillOpacity: 0.1,
+      }}
+    />
+  );
 }
 
 // Ölçüm noktası ikonu oluştur
@@ -258,7 +350,10 @@ function MapView({
   editingRoute,
   simulationHistoryOpen,
   mapType = 'street',
-  showWalkingRadius = true
+  showWalkingRadius = true,
+  onCircleSelect,
+  routeColors = {},
+  onRouteColorChange
 }) {
   const [showEmployees, setShowEmployees] = useState(true);
   const [editingEmployee, setEditingEmployee] = useState(null);
@@ -271,6 +366,18 @@ function MapView({
   const [measurePolyline, setMeasurePolyline] = useState([]);
   const [walkingPolyline, setWalkingPolyline] = useState([]);
   const [measureLoading, setMeasureLoading] = useState(false);
+
+  // Daire seçim modu durumları
+  const [circleSelectMode, setCircleSelectMode] = useState(false);
+  const [selectionCircle, setSelectionCircle] = useState(null);
+
+  // Renk seçici
+  const [colorPickerAnchor, setColorPickerAnchor] = useState(null);
+
+  // Rota rengini al (özel renk varsa onu, yoksa varsayılan)
+  const getRouteColor = (index) => {
+    return routeColors[index] || ROUTE_COLORS[index % ROUTE_COLORS.length];
+  };
 
   // Düzenleme modunda harita tıklaması
   const handleMapClick = (latlng) => {
@@ -315,6 +422,59 @@ function MapView({
     }
     setMeasureMode(!measureMode);
   };
+
+  // Daire seçim modu aç/kapat
+  const handleToggleCircleSelect = () => {
+    if (circleSelectMode) {
+      setSelectionCircle(null);
+    } else {
+      // Ölçüm modunu kapat
+      if (measureMode) {
+        setMeasurePoints([]);
+        setMeasureResult(null);
+        setMeasurePolyline([]);
+        setWalkingPolyline([]);
+        setMeasureMode(false);
+      }
+    }
+    setCircleSelectMode(!circleSelectMode);
+  };
+
+  // Daire çizimi tamamlandığında
+  const handleCircleDrawn = useCallback((center, radius) => {
+    if (!employees || employees.length === 0) return;
+
+    // Alan içindeki personelleri bul (Haversine formülü)
+    const toRad = (deg) => deg * Math.PI / 180;
+    const haversineDistance = (lat1, lng1, lat2, lng2) => {
+      const R = 6371000;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    const selectedEmployees = employees.filter(emp => {
+      const lat = emp.location?.lat || emp.lat || emp.home_lat;
+      const lng = emp.location?.lng || emp.lng || emp.home_lng;
+      if (!lat || !lng) return false;
+      return haversineDistance(center.lat, center.lng, lat, lng) <= radius;
+    });
+
+    setSelectionCircle({ center, radius });
+    setCircleSelectMode(false);
+
+    if (onCircleSelect) {
+      onCircleSelect({
+        center: { lat: center.lat, lng: center.lng },
+        radius: Math.round(radius),
+        employees: selectedEmployees,
+        employeeIds: selectedEmployees.map(e => e.id)
+      });
+    }
+  }, [employees, onCircleSelect]);
 
   // Ölçüm noktalarını temizle
   const handleClearMeasure = () => {
@@ -431,11 +591,31 @@ function MapView({
         <MapClickHandler 
           editingEmployee={editingEmployee} 
           measureMode={measureMode}
+          circleSelectMode={circleSelectMode}
           onMapClick={handleMapClick} 
           onMeasureClick={handleMeasureClick}
         />
+        <CircleDrawHandler
+          active={circleSelectMode}
+          onCircleDrawn={handleCircleDrawn}
+        />
         <FitBoundsToEmployees employees={employees} />
         <FlyToEmployee employee={focusedEmployee} />
+
+        {/* Seçim dairesi */}
+        {selectionCircle && (
+          <Circle
+            center={[selectionCircle.center.lat, selectionCircle.center.lng]}
+            radius={selectionCircle.radius}
+            pathOptions={{
+              color: '#FF9800',
+              weight: 2,
+              dashArray: '6 4',
+              fillColor: '#FF9800',
+              fillOpacity: 0.12,
+            }}
+          />
+        )}
 
         {/* Ölçüm Noktaları ve Çizgisi */}
         {measureMode && measurePoints.map((point, index) => (
@@ -661,7 +841,7 @@ function MapView({
           const positions = polyline.map(p => 
             Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]
           );
-          const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
+          const color = getRouteColor(index);
           
           // Bu rotanın seçili olup olmadığını belirle
           const isSelected = selectedRouteIndex === null || selectedRouteIndex === undefined || selectedRouteIndex === index;
@@ -691,7 +871,7 @@ function MapView({
         {/* Yürüme Mesafesi Daireleri */}
         {showWalkingRadius && routes.map((route, routeIndex) => {
           const stops = route.stops || [];
-          const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+          const color = getRouteColor(routeIndex);
           const isSelected = selectedRouteIndex === null || selectedRouteIndex === undefined || selectedRouteIndex === routeIndex;
           
           if (!isSelected) return null;
@@ -722,7 +902,7 @@ function MapView({
         {/* Durak İşaretçileri - Aracın yolcu aldığı noktalar */}
         {routes.map((route, routeIndex) => {
           const stops = route.stops || [];
-          const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
+          const color = getRouteColor(routeIndex);
           const isSelected = selectedRouteIndex === null || selectedRouteIndex === undefined || selectedRouteIndex === routeIndex;
           const isEditing = editingRoute === routeIndex;
           
@@ -865,6 +1045,57 @@ function MapView({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Tooltip title="Rota Rengi">
+            <IconButton
+              onClick={(e) => setColorPickerAnchor(e.currentTarget)}
+              disabled={selectedRouteIndex === null || selectedRouteIndex === undefined}
+              sx={{
+                opacity: (selectedRouteIndex === null || selectedRouteIndex === undefined) ? 0.4 : 1
+              }}
+            >
+              <PaletteIcon sx={{ color: selectedRouteIndex !== null && selectedRouteIndex !== undefined ? getRouteColor(selectedRouteIndex) : 'inherit' }} />
+            </IconButton>
+          </Tooltip>
+          <Popover
+            open={Boolean(colorPickerAnchor)}
+            anchorEl={colorPickerAnchor}
+            onClose={() => setColorPickerAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+          >
+            <Box sx={{ p: 1.5, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 0.5, maxWidth: 180 }}>
+              {COLOR_PALETTE.map((color) => (
+                <IconButton
+                  key={color}
+                  onClick={() => {
+                    if (onRouteColorChange && selectedRouteIndex !== null && selectedRouteIndex !== undefined) {
+                      onRouteColorChange(selectedRouteIndex, color);
+                    }
+                    setColorPickerAnchor(null);
+                  }}
+                  sx={{
+                    width: 28, height: 28, minWidth: 28,
+                    bgcolor: color,
+                    border: getRouteColor(selectedRouteIndex) === color ? '3px solid #333' : '2px solid #ddd',
+                    borderRadius: '50%',
+                    '&:hover': { bgcolor: color, opacity: 0.8, transform: 'scale(1.15)' }
+                  }}
+                />
+              ))}
+            </Box>
+          </Popover>
+          <Tooltip title={circleSelectMode ? "Alan Seçimini Kapat" : "Alan Seçimi"}>
+            <IconButton
+              onClick={handleToggleCircleSelect}
+              color={circleSelectMode ? "warning" : "default"}
+              sx={{
+                bgcolor: circleSelectMode ? 'warning.light' : 'transparent',
+                '&:hover': { bgcolor: circleSelectMode ? 'warning.main' : 'grey.200' }
+              }}
+            >
+              <AdjustIcon />
+            </IconButton>
+          </Tooltip>
           <Tooltip title={measureMode ? "Ölçümü Kapat" : "Mesafe Ölç"}>
             <IconButton 
               onClick={handleToggleMeasure}

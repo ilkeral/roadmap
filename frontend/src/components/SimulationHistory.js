@@ -34,11 +34,10 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import WorkIcon from '@mui/icons-material/Work';
 import { api } from '../services/api';
 
-// Route colors for visualization
+// Route colors - Tableau 10 palette
 const ROUTE_COLORS = [
-  '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-  '#ffff33', '#a65628', '#f781bf', '#999999', '#66c2a5',
-  '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f'
+  '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f',
+  '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'
 ];
 
 function SimulationHistory({ 
@@ -52,9 +51,15 @@ function SimulationHistory({
   editingRoute,
   onStartEditRoute,
   showWalkingRadius = true,
-  onReoptimizeRoute
+  onReoptimizeRoute,
+  routeColors = {}
 }) {
   const [simulations, setSimulations] = useState([]);
+
+  // Rota rengini al (özel renk varsa onu, yoksa varsayılan)
+  const getRouteColor = (index) => {
+    return routeColors[index] || ROUTE_COLORS[index % ROUTE_COLORS.length];
+  };
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [simulationDetails, setSimulationDetails] = useState({});
@@ -426,7 +431,7 @@ function SimulationHistory({
                               mb: 0.5,
                               borderRadius: 1,
                               borderLeft: 4,
-                              borderLeftColor: ROUTE_COLORS[routeIndex % ROUTE_COLORS.length],
+                              borderLeftColor: getRouteColor(routeIndex),
                               cursor: 'pointer',
                               '&:hover': { bgcolor: 'grey.100' }
                             }}
@@ -437,7 +442,7 @@ function SimulationHistory({
                                   <DirectionsBusIcon
                                     sx={{
                                       fontSize: 16,
-                                      color: ROUTE_COLORS[routeIndex % ROUTE_COLORS.length]
+                                      color: getRouteColor(routeIndex)
                                     }}
                                   />
                                   <Typography variant="body2">
@@ -535,7 +540,7 @@ function SimulationHistory({
           <DirectionsBusIcon 
             sx={{ 
               color: employeeDialog.route 
-                ? ROUTE_COLORS[employeeDialog.route.index % ROUTE_COLORS.length] 
+                ? getRouteColor(employeeDialog.route.index) 
                 : 'primary.main' 
             }} 
           />
