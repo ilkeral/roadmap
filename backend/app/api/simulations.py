@@ -1107,6 +1107,518 @@ async def preview_route_reorder(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class AddEmployeeToRouteRequest(BaseModel):
+    """Schema for adding an employee to a route"""
+    employee_id: int
+
+
+class RemoveEmployeeRequest(BaseModel):
+    """Schema for removing an employee from a route"""
+    employee_id: int
+
+
+async def _build_employee_stop(db, employee_id: int, existing_stops: list):
+    """
+    Fetch employee info from DB and find the best existing stop to add them to,
+    or create a new stop at their home location.
+    Returns (updated_stops, employee_name, added_to_stop_index).
+    """
+    # Fetch employee info from database
+    emp_result = await db.execute(
+        text("""
+            SELECT id, name,
+                   ST_Y(home_location::geometry) as lat,
+                   ST_X(home_location::geometry) as lng
+            FROM employees WHERE id = :emp_id
+        """),
+        {"emp_id": employee_id}
+    )
+    emp = emp_result.fetchone()
+    if not emp:
+        return None, None, None
+
+    updated_stops = json.loads(json.dumps(existing_stops))  # Deep copy
+    emp_loc = (emp.lat, emp.lng)
+
+    # Try to find an existing stop within 400m of the employee
+    best_stop_idx = None
+    best_dist = float('inf')
+    for i, stop in enumerate(updated_stops):
+        stop_loc = (stop["location"]["lat"], stop["location"]["lng"])
+        dist = geodesic(emp_loc, stop_loc).meters
+        if dist < best_dist and dist <= 400:
+            best_dist = dist
+            best_stop_idx = i
+
+    if best_stop_idx is not None:
+        # Add to existing stop
+        stop = updated_stops[best_stop_idx]
+        stop.setdefault("employee_ids", []).append(employee_id)
+        stop.setdefault("employee_names", []).append(emp.name)
+        stop["employee_count"] = len(stop["employee_ids"])
+        walks = stop.get("employee_walking_distances") or []
+        walks.append({
+            "employee_id": employee_id,
+            "walking_distance": round(best_dist)
+        })
+        stop["employee_walking_distances"] = walks
+        stop["max_walking_distance"] = max(w["walking_distance"] for w in walks)
+        added_idx = best_stop_idx
+    else:
+        # Create a new stop at employee's home location
+        new_stop = {
+            "location": {"lat": emp.lat, "lng": emp.lng},
+            "employee_ids": [employee_id],
+            "employee_names": [emp.name],
+            "employee_count": 1,
+            "employee_walking_distances": [{
+                "employee_id": employee_id,
+                "walking_distance": 0
+            }],
+            "max_walking_distance": 0,
+            "road_name": "Manuel ekleme"
+        }
+        updated_stops.append(new_stop)
+        added_idx = len(updated_stops) - 1
+
+    return updated_stops, emp.name, added_idx
+
+
+def _apply_employee_removal(existing_stops: list, employee_id: int):
+    """
+    Remove an employee from stops list.
+    Returns (updated_stops, removed_employee_name, found) tuple.
+    """
+    updated_stops = json.loads(json.dumps(existing_stops))  # Deep copy
+    found = False
+    removed_name = None
+
+    for stop in updated_stops:
+        emp_ids = stop.get("employee_ids") or []
+        if employee_id in emp_ids:
+            found = True
+            idx_in_stop = emp_ids.index(employee_id)
+            # Get name before removing
+            names = stop.get("employee_names") or []
+            if idx_in_stop < len(names):
+                removed_name = names[idx_in_stop]
+                names.pop(idx_in_stop)
+                stop["employee_names"] = names
+            # Remove from walking distances
+            walk_dists = stop.get("employee_walking_distances") or []
+            stop["employee_walking_distances"] = [
+                w for w in walk_dists if w.get("employee_id") != employee_id
+            ]
+            # Remove from ids
+            emp_ids.remove(employee_id)
+            stop["employee_ids"] = emp_ids
+            stop["employee_count"] = len(emp_ids)
+            break
+
+    # Remove stops that have no employees left
+    updated_stops = [s for s in updated_stops if (s.get("employee_count") or 0) > 0 or (s.get("employee_ids") and len(s["employee_ids"]) > 0)]
+
+    return updated_stops, removed_name, found
+
+
+@router.post("/{simulation_id}/routes/{route_id}/add-employee/preview")
+async def preview_add_employee(
+    simulation_id: int,
+    route_id: int,
+    request: AddEmployeeToRouteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview adding an employee to a route without saving.
+    Returns comparison of old vs new distance/duration.
+    """
+    try:
+        sim_result = await db.execute(
+            text("SELECT depot_lat, depot_lng, traffic_mode FROM simulations WHERE id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        sim = sim_result.fetchone()
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+
+        route_result = await db.execute(
+            text("SELECT id, stops, distance, duration, passengers, capacity FROM simulation_routes WHERE id = :route_id AND simulation_id = :sim_id"),
+            {"route_id": route_id, "sim_id": simulation_id}
+        )
+        route = route_result.fetchone()
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        old_distance = route.distance
+        old_duration = route.duration
+
+        # Check if employee is already in this route
+        for stop in existing_stops:
+            if request.employee_id in (stop.get("employee_ids") or []):
+                raise HTTPException(status_code=400, detail="Personel zaten bu rotada")
+
+        # Check capacity
+        current_passengers = route.passengers or 0
+        capacity = route.capacity or 99
+        if current_passengers >= capacity:
+            raise HTTPException(status_code=400, detail="Araç kapasitesi dolu")
+
+        updated_stops, emp_name, added_idx = await _build_employee_stop(db, request.employee_id, existing_stops)
+        if updated_stops is None:
+            raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+        # Build new route coords
+        route_coords = [depot]
+        for stop in updated_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+
+        route_data = await osrm_service.get_route(route_coords)
+        new_distance = route_data.get("distance", 0)
+        new_duration = route_data.get("duration", 0) * traffic_factor
+
+        distance_diff = new_distance - old_distance
+        duration_diff = new_duration - old_duration
+
+        return {
+            "success": True,
+            "employee_id": request.employee_id,
+            "employee_name": emp_name,
+            "old_distance": old_distance,
+            "old_duration": old_duration,
+            "new_distance": new_distance,
+            "new_duration": new_duration,
+            "distance_diff": distance_diff,
+            "duration_diff": duration_diff,
+            "distance_diff_percent": round((distance_diff / old_distance * 100) if old_distance else 0, 1),
+            "duration_diff_percent": round((duration_diff / old_duration * 100) if old_duration else 0, 1),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Personel ekleme önizleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{simulation_id}/routes/{route_id}/add-employee")
+async def add_employee_to_route(
+    simulation_id: int,
+    route_id: int,
+    request: AddEmployeeToRouteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Add an employee to a route and recalculate the route.
+    """
+    try:
+        sim_result = await db.execute(
+            text("SELECT depot_lat, depot_lng, traffic_mode FROM simulations WHERE id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        sim = sim_result.fetchone()
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+
+        route_result = await db.execute(
+            text("SELECT id, stops, distance, duration, passengers, capacity FROM simulation_routes WHERE id = :route_id AND simulation_id = :sim_id"),
+            {"route_id": route_id, "sim_id": simulation_id}
+        )
+        route = route_result.fetchone()
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+
+        # Check if employee is already in this route
+        for stop in existing_stops:
+            if request.employee_id in (stop.get("employee_ids") or []):
+                raise HTTPException(status_code=400, detail="Personel zaten bu rotada")
+
+        current_passengers = route.passengers or 0
+        capacity = route.capacity or 99
+        if current_passengers >= capacity:
+            raise HTTPException(status_code=400, detail="Araç kapasitesi dolu")
+
+        updated_stops, emp_name, added_idx = await _build_employee_stop(db, request.employee_id, existing_stops)
+        if updated_stops is None:
+            raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+        new_passengers = sum(s.get("employee_count", 0) for s in updated_stops)
+
+        # Build new route coords
+        route_coords = [depot]
+        for stop in updated_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+
+        route_data = await osrm_service.get_route(route_coords)
+        new_distance = route_data.get("distance", 0)
+        new_duration = route_data.get("duration", 0) * traffic_factor
+        new_polyline = route_data.get("geometry", [])
+
+        # Update database
+        await db.execute(text("""
+            UPDATE simulation_routes
+            SET distance = :distance, duration = :duration,
+                polyline = :polyline, stops = :stops, passengers = :passengers
+            WHERE id = :route_id
+        """), {
+            "route_id": route_id,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": json.dumps(new_polyline),
+            "stops": json.dumps(updated_stops),
+            "passengers": new_passengers
+        })
+
+        # Update simulation totals
+        totals_result = await db.execute(
+            text("SELECT SUM(distance) as total_dist, SUM(duration) as total_dur, SUM(passengers) as total_pass FROM simulation_routes WHERE simulation_id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        totals = totals_result.fetchone()
+        await db.execute(text("""
+            UPDATE simulations
+            SET total_distance = :dist, total_duration = :dur, total_passengers = :pass
+            WHERE id = :sim_id
+        """), {
+            "sim_id": simulation_id,
+            "dist": totals.total_dist or 0,
+            "dur": totals.total_dur or 0,
+            "pass": totals.total_pass or 0
+        })
+
+        await db.commit()
+
+        logger.info(f"Personel {request.employee_id} rota {route_id}'ye eklendi: {new_distance/1000:.1f}km")
+
+        return {
+            "success": True,
+            "route_id": route_id,
+            "employee_id": request.employee_id,
+            "employee_name": emp_name,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": new_polyline,
+            "stops": updated_stops,
+            "passengers": new_passengers
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Personel ekleme hatası: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{simulation_id}/routes/{route_id}/remove-employee/preview")
+async def preview_remove_employee(
+    simulation_id: int,
+    route_id: int,
+    request: RemoveEmployeeRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview removing an employee from a route without saving.
+    Returns comparison of old vs new distance/duration.
+    """
+    try:
+        # Get simulation for depot and traffic mode
+        sim_result = await db.execute(
+            text("SELECT depot_lat, depot_lng, traffic_mode FROM simulations WHERE id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        sim = sim_result.fetchone()
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+
+        # Get current route
+        route_result = await db.execute(
+            text("SELECT id, stops, distance, duration, passengers FROM simulation_routes WHERE id = :route_id AND simulation_id = :sim_id"),
+            {"route_id": route_id, "sim_id": simulation_id}
+        )
+        route = route_result.fetchone()
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+        old_distance = route.distance
+        old_duration = route.duration
+
+        # Apply removal
+        updated_stops, removed_name, found = _apply_employee_removal(existing_stops, request.employee_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Personel bu rotada bulunamadı")
+
+        # Build new route coords
+        route_coords = [depot]
+        for stop in updated_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+
+        # Get new route from OSRM (if there are still stops)
+        new_distance = 0.0
+        new_duration = 0.0
+        if len(route_coords) > 2:
+            route_data = await osrm_service.get_route(route_coords)
+            new_distance = route_data.get("distance", 0)
+            new_duration = route_data.get("duration", 0) * traffic_factor
+
+        distance_diff = new_distance - old_distance
+        duration_diff = new_duration - old_duration
+
+        return {
+            "success": True,
+            "employee_id": request.employee_id,
+            "employee_name": removed_name or f"Personel #{request.employee_id}",
+            "stops_remaining": len(updated_stops),
+            "old_distance": old_distance,
+            "old_duration": old_duration,
+            "new_distance": new_distance,
+            "new_duration": new_duration,
+            "distance_diff": distance_diff,
+            "duration_diff": duration_diff,
+            "distance_diff_percent": round((distance_diff / old_distance * 100) if old_distance else 0, 1),
+            "duration_diff_percent": round((duration_diff / old_duration * 100) if old_duration else 0, 1),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Personel kaldırma önizleme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{simulation_id}/routes/{route_id}/remove-employee")
+async def remove_employee_from_route(
+    simulation_id: int,
+    route_id: int,
+    request: RemoveEmployeeRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Remove an employee from a route and recalculate the route.
+    """
+    try:
+        # Get simulation for depot and traffic mode
+        sim_result = await db.execute(
+            text("SELECT depot_lat, depot_lng, traffic_mode FROM simulations WHERE id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        sim = sim_result.fetchone()
+        if not sim:
+            raise HTTPException(status_code=404, detail="Simülasyon bulunamadı")
+
+        depot = (sim.depot_lat, sim.depot_lng)
+        traffic_factor = TRAFFIC_SCALING_FACTORS.get(sim.traffic_mode or 'none', 1.0)
+
+        # Get current route
+        route_result = await db.execute(
+            text("SELECT id, stops, distance, duration, passengers, capacity FROM simulation_routes WHERE id = :route_id AND simulation_id = :sim_id"),
+            {"route_id": route_id, "sim_id": simulation_id}
+        )
+        route = route_result.fetchone()
+        if not route:
+            raise HTTPException(status_code=404, detail="Rota bulunamadı")
+
+        existing_stops = json.loads(route.stops) if isinstance(route.stops, str) else route.stops
+
+        # Apply removal
+        updated_stops, removed_name, found = _apply_employee_removal(existing_stops, request.employee_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Personel bu rotada bulunamadı")
+
+        # Recalculate total passengers
+        new_passengers = sum(s.get("employee_count", 0) for s in updated_stops)
+
+        # Build new route coords
+        route_coords = [depot]
+        for stop in updated_stops:
+            loc = stop["location"]
+            route_coords.append((loc["lat"], loc["lng"]))
+        route_coords.append(depot)
+
+        # Get new route from OSRM
+        new_distance = 0.0
+        new_duration = 0.0
+        new_polyline = []
+        if len(route_coords) > 2:
+            route_data = await osrm_service.get_route(route_coords)
+            new_distance = route_data.get("distance", 0)
+            new_duration = route_data.get("duration", 0) * traffic_factor
+            new_polyline = route_data.get("geometry", [])
+
+        # Update database
+        await db.execute(text("""
+            UPDATE simulation_routes
+            SET distance = :distance, duration = :duration,
+                polyline = :polyline, stops = :stops, passengers = :passengers
+            WHERE id = :route_id
+        """), {
+            "route_id": route_id,
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": json.dumps(new_polyline),
+            "stops": json.dumps(updated_stops),
+            "passengers": new_passengers
+        })
+
+        # Update simulation totals
+        totals_result = await db.execute(
+            text("SELECT SUM(distance) as total_dist, SUM(duration) as total_dur, SUM(passengers) as total_pass FROM simulation_routes WHERE simulation_id = :sim_id"),
+            {"sim_id": simulation_id}
+        )
+        totals = totals_result.fetchone()
+        await db.execute(text("""
+            UPDATE simulations
+            SET total_distance = :dist, total_duration = :dur, total_passengers = :pass
+            WHERE id = :sim_id
+        """), {
+            "sim_id": simulation_id,
+            "dist": totals.total_dist or 0,
+            "dur": totals.total_dur or 0,
+            "pass": totals.total_pass or 0
+        })
+
+        await db.commit()
+
+        logger.info(f"Personel {request.employee_id} rota {route_id}'den kaldırıldı: {new_distance/1000:.1f}km")
+
+        return {
+            "success": True,
+            "route_id": route_id,
+            "employee_id": request.employee_id,
+            "employee_name": removed_name or f"Personel #{request.employee_id}",
+            "distance": new_distance,
+            "duration": new_duration,
+            "polyline": new_polyline,
+            "stops": updated_stops,
+            "passengers": new_passengers
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Personel kaldırma hatası: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{simulation_id}/routes/{route_id}/reorder")
 async def reorder_route_stops(
     simulation_id: int,

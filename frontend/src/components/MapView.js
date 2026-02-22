@@ -7,7 +7,7 @@ import StraightenIcon from '@mui/icons-material/Straighten';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { api } from '../services/api';
 
-// Custom icons
+// Özel ikonlar
 const createIcon = (color, size = 25) => {
   return L.divIcon({
     className: 'custom-marker',
@@ -28,7 +28,7 @@ const depotIcon = createIcon('#4CAF50', 35);
 const employeeIcon = createIcon('#2196F3', 16);
 const stopIcon = createIcon('#FF5722', 20);
 
-// Create stop icon with route color
+// Rota rengine göre durak ikonu oluştur
 const createStopIcon = (color) => {
   return L.divIcon({
     className: 'stop-marker',
@@ -65,14 +65,14 @@ const busIcon = L.divIcon({
   iconAnchor: [15, 15],
 });
 
-// Route colors - more distinct colors
+// Rota renkleri - belirgin renkler
 const ROUTE_COLORS = [
   '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
   '#00CED1', '#DC143C', '#32CD32', '#FF1493', '#1E90FF',
   '#FFD700', '#8B4513', '#00FF7F', '#9400D3', '#FF6347'
 ];
 
-// Map center updater component
+// Harita merkezi güncelleyici bileşeni
 function MapCenterUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -83,7 +83,7 @@ function MapCenterUpdater({ center }) {
   return null;
 }
 
-// Fly to focused employee with zoom
+// Odaklanan personele yakınlaştır
 function FlyToEmployee({ employee }) {
   const map = useMap();
   useEffect(() => {
@@ -96,15 +96,15 @@ function FlyToEmployee({ employee }) {
   return null;
 }
 
-// Fit map bounds to show all employees
+// Tüm personelleri gösterecek şekilde haritayı sığdır
 function FitBoundsToEmployees({ employees }) {
   const map = useMap();
   const prevEmployeeCount = useRef(0);
   
   useEffect(() => {
-    // Fit bounds when employees change (count changes or first load)
+    // Personel sayısı değiştiğinde haritayı sığdır
     if (employees && employees.length > 0) {
-      // Only fit if employee count changed (new data loaded)
+      // Sadece personel sayısı değiştiğinde sığdır (yeni veri yüklendiğinde)
       if (prevEmployeeCount.current !== employees.length) {
         const bounds = employees.map(emp => [emp.location.lat, emp.location.lng]);
         if (bounds.length > 0) {
@@ -117,7 +117,7 @@ function FitBoundsToEmployees({ employees }) {
   return null;
 }
 
-// Animation controller component
+// Animasyon kontrol bileşeni
 function AnimationController({ 
   routes, 
   playing, 
@@ -136,7 +136,7 @@ function AnimationController({
     }
 
     let startTime = null;
-    const duration = 30000; // 30 seconds for full animation
+    const duration = 30000; // Tam animasyon için 30 saniye
 
     const animate = (timestamp) => {
       if (!startTime) startTime = timestamp;
@@ -145,7 +145,7 @@ function AnimationController({
       
       onProgressChange(newProgress);
 
-      // Calculate vehicle positions
+      // Araç pozisyonlarını hesapla
       const positions = routes.map((route, index) => {
         const polyline = route.polyline || [];
         if (polyline.length < 2) return null;
@@ -203,7 +203,7 @@ function AnimationController({
   );
 }
 
-// Map click handler for editing employee location and measuring
+// Harita tıklama işleyicisi - personel konumu düzenleme ve ölçüm
 function MapClickHandler({ editingEmployee, measureMode, onMapClick, onMeasureClick }) {
   useMapEvents({
     click: (e) => {
@@ -217,7 +217,7 @@ function MapClickHandler({ editingEmployee, measureMode, onMapClick, onMeasureCl
   return null;
 }
 
-// Create measure point icon
+// Ölçüm noktası ikonu oluştur
 const createMeasureIcon = (index) => {
   return L.divIcon({
     className: 'measure-marker',
@@ -253,6 +253,8 @@ function MapView({
   onEmployeeLocationUpdate,
   onStopDrag,
   onSetFirstStop,
+  onRemoveEmployeeFromRoute,
+  onAddEmployeeToRoute,
   editingRoute,
   simulationHistoryOpen,
   mapType = 'street',
@@ -262,7 +264,7 @@ function MapView({
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [pendingLocation, setPendingLocation] = useState(null);
   
-  // Measure mode states
+  // Ölçüm modu durumları
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState([]);
   const [measureResult, setMeasureResult] = useState(null);
@@ -270,14 +272,14 @@ function MapView({
   const [walkingPolyline, setWalkingPolyline] = useState([]);
   const [measureLoading, setMeasureLoading] = useState(false);
 
-  // Handle map click when editing
+  // Düzenleme modunda harita tıklaması
   const handleMapClick = (latlng) => {
     if (editingEmployee) {
       setPendingLocation({ lat: latlng.lat, lng: latlng.lng });
     }
   };
 
-  // Handle measure point click
+  // Ölçüm noktası tıklaması
   const handleMeasureClick = async (latlng) => {
     const newPoints = [...measurePoints, { lat: latlng.lat, lng: latlng.lng }];
     setMeasurePoints(newPoints);
@@ -302,10 +304,10 @@ function MapView({
     }
   };
 
-  // Toggle measure mode
+  // Ölçüm modunu aç/kapat
   const handleToggleMeasure = () => {
     if (measureMode) {
-      // Clear measure data when exiting
+      // Çıkışta ölçüm verilerini temizle
       setMeasurePoints([]);
       setMeasureResult(null);
       setMeasurePolyline([]);
@@ -314,7 +316,7 @@ function MapView({
     setMeasureMode(!measureMode);
   };
 
-  // Clear measure points
+  // Ölçüm noktalarını temizle
   const handleClearMeasure = () => {
     setMeasurePoints([]);
     setMeasureResult(null);
@@ -322,7 +324,7 @@ function MapView({
     setWalkingPolyline([]);
   };
 
-  // Handle stop drag
+  // Durak sürükleme işleyicisi
   const handleStopDragEnd = (routeIndex, stopIndex, event) => {
     const { lat, lng } = event.target.getLatLng();
     if (onStopDrag) {
@@ -330,7 +332,7 @@ function MapView({
     }
   };
 
-  // Confirm location change
+  // Konum değişikliğini onayla
   const handleConfirmLocation = async () => {
     if (editingEmployee && pendingLocation && onEmployeeLocationUpdate) {
       await onEmployeeLocationUpdate(editingEmployee.id, pendingLocation);
@@ -339,18 +341,18 @@ function MapView({
     }
   };
 
-  // Cancel editing
+  // Düzenlemeyi iptal et
   const handleCancelEdit = () => {
     setEditingEmployee(null);
     setPendingLocation(null);
   };
 
-  // Toggle employee visibility based on count
+  // Personel sayısına göre görünürlüğü ayarla
   useEffect(() => {
     setShowEmployees(employees.length <= 500);
   }, [employees.length]);
 
-  // Find which route and stop an employee belongs to
+  // Personelin hangi rota ve durağa ait olduğunu bul
   const getEmployeeRouteInfo = (employeeId) => {
     for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       const route = routes[routeIndex];
@@ -365,7 +367,7 @@ function MapView({
     return null;
   };
 
-  // Map tile configurations
+  // Harita katman yapılandırmaları
   const getTileLayer = () => {
     switch (mapType) {
       case 'satellite':
@@ -435,7 +437,7 @@ function MapView({
         <FitBoundsToEmployees employees={employees} />
         <FlyToEmployee employee={focusedEmployee} />
 
-        {/* Measure Points and Polyline */}
+        {/* Ölçüm Noktaları ve Çizgisi */}
         {measureMode && measurePoints.map((point, index) => (
           <Marker
             key={`measure-${index}`}
@@ -485,7 +487,7 @@ function MapView({
           </Popup>
         </Marker>
 
-        {/* Employee Markers */}
+        {/* Personel İşaretçileri */}
         {showEmployees && employees.map((employee) => (
           <Marker
             key={`emp-${employee.id}`}
@@ -525,15 +527,96 @@ function MapView({
                     </Button>
                   </div>
                 )}
+                {/* Rota işlem butonları - çıkar, ekle, ilk durak */}
                 {(() => {
                   const routeInfo = getEmployeeRouteInfo(employee.id);
-                  if (routeInfo && editingRoute === routeInfo.routeIndex && routeInfo.stopIndex > 0) {
-                    return (
+                  const buttons = [];
+
+                  // Seçili rotadaki personel → çıkar butonu göster
+                  if (
+                    routeInfo &&
+                    selectedRouteIndex === routeInfo.routeIndex &&
+                    onRemoveEmployeeFromRoute
+                  ) {
+                    buttons.push(
                       <button
-                        onClick={() => onSetFirstStop && onSetFirstStop(routeInfo.routeIndex, routeInfo.stopIndex, routeInfo.route)}
+                        key="remove"
+                        onClick={() =>
+                          onRemoveEmployeeFromRoute(
+                            routeInfo.routeIndex,
+                            routeInfo.route.id,
+                            employee.id
+                          )
+                        }
                         style={{
                           width: '100%',
-                          marginTop: '10px',
+                          marginTop: '8px',
+                          padding: '7px 12px',
+                          backgroundColor: '#d32f2f',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        ❌ Personeli Rotadan Çıkar
+                      </button>
+                    );
+                  }
+
+                  // Herhangi bir rotada olmayan personel + rota düzenleniyor → ekle butonu
+                  if (
+                    !routeInfo &&
+                    editingRoute !== null &&
+                    editingRoute !== undefined &&
+                    routes[editingRoute] &&
+                    onAddEmployeeToRoute
+                  ) {
+                    const editedRoute = routes[editingRoute];
+                    buttons.push(
+                      <button
+                        key="add"
+                        onClick={() =>
+                          onAddEmployeeToRoute(
+                            editingRoute,
+                            editedRoute.id,
+                            employee.id
+                          )
+                        }
+                        style={{
+                          width: '100%',
+                          marginTop: '8px',
+                          padding: '7px 12px',
+                          backgroundColor: '#2e7d32',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        ➕ Rotaya Ekle (Rota {(editedRoute.vehicle_id || 0) + 1})
+                      </button>
+                    );
+                  }
+
+                  // Düzenleme modunda, personelin bulunduğu rota düzenleniyorsa → ilk durak butonu
+                  if (
+                    routeInfo &&
+                    editingRoute === routeInfo.routeIndex &&
+                    routeInfo.stopIndex > 0 &&
+                    onSetFirstStop
+                  ) {
+                    buttons.push(
+                      <button
+                        key="first-stop"
+                        onClick={() => onSetFirstStop(routeInfo.routeIndex, routeInfo.stopIndex, routeInfo.route)}
+                        style={{
+                          width: '100%',
+                          marginTop: '8px',
                           padding: '8px 12px',
                           backgroundColor: '#1976d2',
                           color: 'white',
@@ -548,14 +631,15 @@ function MapView({
                       </button>
                     );
                   }
-                  return null;
+
+                  return buttons.length > 0 ? buttons : null;
                 })()}
               </div>
             </Popup>
           </Marker>
         ))}
 
-        {/* Pending Location Marker (when editing) */}
+        {/* Bekleyen Konum İşaretçisi (düzenleme sırasında) */}
         {pendingLocation && (
           <Marker
             position={[pendingLocation.lat, pendingLocation.lng]}
@@ -568,18 +652,18 @@ function MapView({
           </Marker>
         )}
 
-        {/* Route Polylines */}
+        {/* Rota Çizgileri */}
         {routes.map((route, index) => {
           const polyline = route.polyline || [];
           if (polyline.length < 2) return null;
 
-          // Support both {lat, lng} objects and [lat, lng] arrays
+          // Hem {lat, lng} nesnelerini hem [lat, lng] dizilerini destekle
           const positions = polyline.map(p => 
             Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]
           );
           const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
           
-          // Determine if this route is selected or if no route is selected
+          // Bu rotanın seçili olup olmadığını belirle
           const isSelected = selectedRouteIndex === null || selectedRouteIndex === undefined || selectedRouteIndex === index;
           const opacity = isSelected ? 0.9 : 0.15;
           const weight = isSelected ? (selectedRouteIndex === index ? 6 : 4) : 2;
@@ -604,7 +688,7 @@ function MapView({
           );
         })}
 
-        {/* Walking Radius Circles */}
+        {/* Yürüme Mesafesi Daireleri */}
         {showWalkingRadius && routes.map((route, routeIndex) => {
           const stops = route.stops || [];
           const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
@@ -635,7 +719,7 @@ function MapView({
           });
         })}
 
-        {/* Stop Markers - Red dots where vehicle picks up passengers */}
+        {/* Durak İşaretçileri - Aracın yolcu aldığı noktalar */}
         {routes.map((route, routeIndex) => {
           const stops = route.stops || [];
           const color = ROUTE_COLORS[routeIndex % ROUTE_COLORS.length];
@@ -721,7 +805,7 @@ function MapView({
           });
         })}
 
-        {/* Animation */}
+        {/* Animasyon */}
         <AnimationController
           routes={routes}
           playing={animationPlaying}
@@ -731,7 +815,7 @@ function MapView({
 
       </MapContainer>
 
-      {/* Editing Mode Alert */}
+      {/* Düzenleme Modu Uyarısı */}
       {editingEmployee && (
         <Box
           sx={{
@@ -768,7 +852,7 @@ function MapView({
         </Box>
       )}
 
-      {/* Measure Tool */}
+      {/* Ölçüm Aracı */}
       <Paper
         elevation={3}
         sx={{
@@ -857,7 +941,7 @@ function MapView({
         )}
       </Paper>
 
-      {/* Legend */}
+      {/* Harita Açıklaması */}
       <Box
         sx={{
           position: 'absolute',

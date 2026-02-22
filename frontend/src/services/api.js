@@ -258,6 +258,38 @@ export const api = {
     return response.data;
   },
 
+  async previewAddEmployee(simulationId, routeId, employeeId) {
+    const response = await client.post(
+      `/api/simulations/${simulationId}/routes/${routeId}/add-employee/preview`,
+      { employee_id: employeeId }
+    );
+    return response.data;
+  },
+
+  async addEmployeeToRoute(simulationId, routeId, employeeId) {
+    const response = await client.post(
+      `/api/simulations/${simulationId}/routes/${routeId}/add-employee`,
+      { employee_id: employeeId }
+    );
+    return response.data;
+  },
+
+  async previewRemoveEmployee(simulationId, routeId, employeeId) {
+    const response = await client.post(
+      `/api/simulations/${simulationId}/routes/${routeId}/remove-employee/preview`,
+      { employee_id: employeeId }
+    );
+    return response.data;
+  },
+
+  async removeEmployeeFromRoute(simulationId, routeId, employeeId) {
+    const response = await client.post(
+      `/api/simulations/${simulationId}/routes/${routeId}/remove-employee`,
+      { employee_id: employeeId }
+    );
+    return response.data;
+  },
+
   async reorderRouteStops(simulationId, routeId, firstStopIndex) {
     const response = await client.post(`/api/simulations/${simulationId}/routes/${routeId}/reorder`, {
       first_stop_index: firstStopIndex

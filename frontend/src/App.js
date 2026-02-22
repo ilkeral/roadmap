@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ThemeProvider,
   createTheme,
@@ -78,6 +78,12 @@ function App() {
   const [reorderDialog, setReorderDialog] = useState(false);
   const [reorderPreview, setReorderPreview] = useState(null);
   const [pendingReorder, setPendingReorder] = useState(null);
+  const [removeEmployeeDialog, setRemoveEmployeeDialog] = useState(false);
+  const [removeEmployeePreview, setRemoveEmployeePreview] = useState(null);
+  const [pendingRemoveEmployee, setPendingRemoveEmployee] = useState(null);
+  const [addEmployeeDialog, setAddEmployeeDialog] = useState(false);
+  const [addEmployeePreview, setAddEmployeePreview] = useState(null);
+  const [pendingAddEmployee, setPendingAddEmployee] = useState(null);
   const [loading, setLoading] = useState(false);
   const [simulationTime, setSimulationTime] = useState(0);
   const timerRef = useRef(null);
@@ -95,6 +101,19 @@ function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [mapType, setMapType] = useState('street');
   const [showWalkingRadius, setShowWalkingRadius] = useState(true);
+
+  // Simülasyon seçiliyse yalnızca o simülasyondaki personelleri haritada göster
+  const mapEmployees = useMemo(() => {
+    if (routes.length === 0) return employees;
+    const employeeIdsInRoutes = new Set();
+    routes.forEach(route => {
+      (route.stops || []).forEach(stop => {
+        (stop.employee_ids || []).forEach(id => employeeIdsInRoutes.add(id));
+      });
+    });
+    if (employeeIdsInRoutes.size === 0) return employees;
+    return employees.filter(emp => employeeIdsInRoutes.has(emp.id));
+  }, [employees, routes]);
 
   // Check existing login on mount
   useEffect(() => {
@@ -554,6 +573,126 @@ function App() {
     setReorderPreview(null);
   };
 
+  const handleRemoveEmployeeFromRoute = async (routeIndex, routeId, employeeId) => {
+    if (!selectedSimulationId || routeId == null) return;
+
+    setPendingRemoveEmployee({ routeIndex, routeId, employeeId });
+
+    try {
+      const preview = await api.previewRemoveEmployee(selectedSimulationId, routeId, employeeId);
+      setRemoveEmployeePreview(preview);
+      setRemoveEmployeeDialog(true);
+    } catch (error) {
+      console.error('Remove employee preview error:', error);
+      showSnackbar('Önizleme alınamadı: ' + (error.response?.data?.detail || error.message), 'error');
+      setPendingRemoveEmployee(null);
+    }
+  };
+
+  const handleConfirmRemoveEmployee = async () => {
+    if (!pendingRemoveEmployee || !selectedSimulationId) return;
+
+    const { routeIndex, routeId, employeeId } = pendingRemoveEmployee;
+    setRemoveEmployeeDialog(false);
+    setLoading(true);
+
+    try {
+      const result = await api.removeEmployeeFromRoute(selectedSimulationId, routeId, employeeId);
+
+      setRoutes(prev => {
+        const updated = [...prev];
+        updated[routeIndex] = {
+          ...updated[routeIndex],
+          distance: result.distance,
+          duration: result.duration,
+          polyline: result.polyline,
+          stops: result.stops,
+          passengers: result.passengers
+        };
+        return updated;
+      });
+
+      setSimulationHistoryRefreshKey(prev => prev + 1);
+      showSnackbar(
+        `"${result.employee_name}" rotadan kaldırıldı: ${(result.distance/1000).toFixed(1)}km, ${Math.round(result.duration/60)}dk`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Remove employee error:', error);
+      showSnackbar('Personel kaldırılırken hata oluştu: ' + (error.response?.data?.detail || error.message), 'error');
+    } finally {
+      setLoading(false);
+      setPendingRemoveEmployee(null);
+      setRemoveEmployeePreview(null);
+    }
+  };
+
+  const handleCancelRemoveEmployee = () => {
+    setRemoveEmployeeDialog(false);
+    setPendingRemoveEmployee(null);
+    setRemoveEmployeePreview(null);
+  };
+
+  const handleAddEmployeeToRoute = async (routeIndex, routeId, employeeId) => {
+    if (!selectedSimulationId || routeId == null) return;
+
+    setPendingAddEmployee({ routeIndex, routeId, employeeId });
+
+    try {
+      const preview = await api.previewAddEmployee(selectedSimulationId, routeId, employeeId);
+      setAddEmployeePreview(preview);
+      setAddEmployeeDialog(true);
+    } catch (error) {
+      console.error('Add employee preview error:', error);
+      showSnackbar('Önizleme alınamadı: ' + (error.response?.data?.detail || error.message), 'error');
+      setPendingAddEmployee(null);
+    }
+  };
+
+  const handleConfirmAddEmployee = async () => {
+    if (!pendingAddEmployee || !selectedSimulationId) return;
+
+    const { routeIndex, routeId, employeeId } = pendingAddEmployee;
+    setAddEmployeeDialog(false);
+    setLoading(true);
+
+    try {
+      const result = await api.addEmployeeToRoute(selectedSimulationId, routeId, employeeId);
+
+      setRoutes(prev => {
+        const updated = [...prev];
+        updated[routeIndex] = {
+          ...updated[routeIndex],
+          distance: result.distance,
+          duration: result.duration,
+          polyline: result.polyline,
+          stops: result.stops,
+          passengers: result.passengers
+        };
+        return updated;
+      });
+
+      setSimulationHistoryRefreshKey(prev => prev + 1);
+      showSnackbar(
+        `"${result.employee_name}" rotaya eklendi: ${(result.distance/1000).toFixed(1)}km, ${Math.round(result.duration/60)}dk`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Add employee error:', error);
+      showSnackbar('Personel eklenirken hata oluştu: ' + (error.response?.data?.detail || error.message), 'error');
+    } finally {
+      setLoading(false);
+      setPendingAddEmployee(null);
+      setAddEmployeePreview(null);
+    }
+  };
+
+  const handleCancelAddEmployee = () => {
+    setAddEmployeeDialog(false);
+    setPendingAddEmployee(null);
+    setAddEmployeePreview(null);
+  };
+
   const handleSaveRouteChanges = async (routeIndex) => {
     if (!selectedSimulationId || Object.keys(modifiedStops).length === 0) {
       showSnackbar('Değişiklik yapılmadı', 'warning');
@@ -819,7 +958,7 @@ function App() {
           <Toolbar />
           <MapView
             center={mapCenter}
-            employees={employees}
+            employees={mapEmployees}
             routes={routes}
             depotLocation={depotLocation}
             animationPlaying={animationPlaying}
@@ -830,6 +969,8 @@ function App() {
             onEmployeeLocationUpdate={handleEmployeeLocationUpdate}
             onStopDrag={handleStopDrag}
             onSetFirstStop={handleSetFirstStop}
+            onRemoveEmployeeFromRoute={handleRemoveEmployeeFromRoute}
+            onAddEmployeeToRoute={handleAddEmployeeToRoute}
             editingRoute={editingRoute}
             simulationHistoryOpen={simulationHistoryOpen}
             mapType={mapType}
@@ -996,6 +1137,131 @@ function App() {
             </Button>
             <Button onClick={handleConfirmStopDrag} variant="contained" color="primary">
               Uygula
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Add Employee to Route Confirmation Dialog */}
+        <Dialog
+          open={addEmployeeDialog}
+          onClose={handleCancelAddEmployee}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            ➕ Personeli Rotaya Ekle
+          </DialogTitle>
+          <DialogContent>
+            {addEmployeePreview && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ p: 1.5, bgcolor: 'success.light', borderRadius: 1, color: 'white' }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    {addEmployeePreview.employee_name}
+                  </Typography>
+                  <Typography variant="caption">
+                    Bu personel rotaya eklenecek
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Mesafe</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {(addEmployeePreview.old_distance / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={addEmployeePreview.distance_diff > 0 ? 'error.main' : 'success.main'}>
+                      {(addEmployeePreview.new_distance / 1000).toFixed(2)} km
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({addEmployeePreview.distance_diff > 0 ? '+' : ''}{(addEmployeePreview.distance_diff / 1000).toFixed(2)} km)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Süre</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {Math.round(addEmployeePreview.old_duration / 60)} dk
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={addEmployeePreview.duration_diff > 0 ? 'error.main' : 'success.main'}>
+                      {Math.round(addEmployeePreview.new_duration / 60)} dk
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({addEmployeePreview.duration_diff > 0 ? '+' : ''}{Math.round(addEmployeePreview.duration_diff / 60)} dk)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleCancelAddEmployee} color="inherit">
+              İptal
+            </Button>
+            <Button onClick={handleConfirmAddEmployee} variant="contained" color="success">
+              Rotaya Ekle
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Remove Employee Confirmation Dialog */}
+        <Dialog
+          open={removeEmployeeDialog}
+          onClose={handleCancelRemoveEmployee}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            👤 Personeli Rotadan Kaldır
+          </DialogTitle>
+          <DialogContent>
+            {removeEmployeePreview && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ p: 1.5, bgcolor: 'error.light', borderRadius: 1, color: 'white' }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    {removeEmployeePreview.employee_name}
+                  </Typography>
+                  <Typography variant="caption">
+                    Bu personel rotadan kaldırılacak
+                    {removeEmployeePreview.stops_remaining === 0 ? ' (rota boş kalacak)' : ''}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Mesafe</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {(removeEmployeePreview.old_distance / 1000).toFixed(2)} km
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={removeEmployeePreview.distance_diff > 0 ? 'error.main' : 'success.main'}>
+                      {(removeEmployeePreview.new_distance / 1000).toFixed(2)} km
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({removeEmployeePreview.distance_diff > 0 ? '+' : ''}{(removeEmployeePreview.distance_diff / 1000).toFixed(2)} km)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'grey.100', p: 1.5, borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Süre</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body1" sx={{ textDecoration: 'line-through', color: 'text.secondary', fontSize: 12 }}>
+                      {Math.round(removeEmployeePreview.old_duration / 60)} dk
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold" color={removeEmployeePreview.duration_diff > 0 ? 'error.main' : 'success.main'}>
+                      {Math.round(removeEmployeePreview.new_duration / 60)} dk
+                      <Typography component="span" variant="caption" sx={{ ml: 0.5 }}>
+                        ({removeEmployeePreview.duration_diff > 0 ? '+' : ''}{Math.round(removeEmployeePreview.duration_diff / 60)} dk)
+                      </Typography>
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={handleCancelRemoveEmployee} color="inherit">
+              İptal
+            </Button>
+            <Button onClick={handleConfirmRemoveEmployee} variant="contained" color="error">
+              Rotadan Kaldır
             </Button>
           </DialogActions>
         </Dialog>
